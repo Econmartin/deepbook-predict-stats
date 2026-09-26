@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AreaLine, Calibration, CompareRows, StackedBars } from '../components/charts';
 import { PositionsTable } from '../components/tables';
-import { Addr, AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat } from '../components/ui';
+import { Leaders } from '../components/leaders';
+import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat } from '../components/ui';
 import { useLive, useNow, type LiveMarket } from '../live';
 import { fmt, Link, pnlClass, useData, useExplorer, type Bucket, type Overview as O } from '../lib';
 
@@ -31,22 +32,23 @@ export default function Overview() {
 
   return (
     <>
-      <div className="hero fade-in">
+      <div className="hero compact fade-in">
         <div className="eyebrow">DeepBook Predict · Sui mainnet</div>
         <h1>
-          Every trade. <span className="grad">Every result.</span>
+          Who’s <span className="grad">beating the market.</span>
         </h1>
         <p className="lede">
-          Leaderboards, markets and wallet records for DeepBook’s on-chain prediction market — rebuilt from public chain
-          events, reconciled to the cent, and linked to the explorer.
+          The top traders on DeepBook’s on-chain prediction market, ranked from public chain data after every fee.
         </p>
         <AsOfBadge asOf={data?.asOf} />
       </div>
 
+      <Leaders winners={data?.topWinners} skill={data?.topSkill} />
+
       {!data ? (
-        <Skeleton h={128} />
+        <Skeleton h={128} style={{ marginTop: 56 }} />
       ) : (
-        <div className="hero-stats fade-in">
+        <div className="hero-stats fade-in" style={{ marginTop: 56 }}>
           <div>
             <Stat label="Volume traded" value={fmt.usdCompact(t!.volume)} foot={<>{fmt.usdCompact(t!.volume24h)} in the last 24h</>} />
           </div>
@@ -181,41 +183,10 @@ export default function Overview() {
 
       <section>
         <div className="section-head">
-          <h2>Top traders</h2>
+          <h2>Where the money goes</h2>
           <Link to="/leaderboard">Full leaderboard ›</Link>
         </div>
-        <div className="grid g3">
-          <div className="card flush span2">
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Wallet</th>
-                    <th className="r">Net PnL</th>
-                    <th className="r">Trades</th>
-                    <th className="r">ROI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.topWinners ?? []).map((w, i) => (
-                    <tr key={w.owner}>
-                      <td className="rank">{i + 1}</td>
-                      <td>
-                        <Addr address={w.owner} />
-                      </td>
-                      <td className={`r ${pnlClass(w.realizedPnl)}`} style={{ fontWeight: 600 }}>
-                        {fmt.signed(w.realizedPnl)}
-                      </td>
-                      <td className="r">{fmt.int(w.positions)}</td>
-                      <td className={`r ${pnlClass(w.roi)}`}>{fmt.pct(w.roi)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!data && <Skeleton h={220} style={{ margin: 20 }} />}
-            </div>
-          </div>
+        <div className="grid g2">
           <div className="card">
             <div className="card-title">Where the money goes</div>
             {data ? (
@@ -260,6 +231,40 @@ export default function Overview() {
                     </span>
                   )}
                 </div>
+              </>
+            ) : (
+              <Skeleton h={300} />
+            )}
+          </div>
+          <div className="card">
+            <div className="card-title">How traders are doing</div>
+            {data ? (
+              <>
+                <div className="stat">
+                  <div className="value">
+                    {fmt.int(t!.profitableWallets)}
+                    <span className="muted" style={{ fontSize: '0.5em', fontWeight: 600 }}>
+                      {' '}
+                      of {fmt.int(t!.walletsWithResults)}
+                    </span>
+                  </div>
+                  <div className="foot">wallets are in profit after fees</div>
+                </div>
+                <div className="bar-track" style={{ marginTop: 16, height: 12 }}>
+                  <div style={{ width: `${(t!.profitableWallets / Math.max(1, t!.walletsWithResults)) * 100}%`, background: 'var(--pos)' }} />
+                  <div style={{ flex: 1, background: 'var(--neg)', opacity: 0.8 }} />
+                </div>
+                <div className="divider" />
+                <dl className="kv">
+                  <dt>Traders’ combined result</dt>
+                  <dd className={pnlClass(traderResult)}>{fmt.signed(traderResult)}</dd>
+                  <dt>Fees as a share of volume</dt>
+                  <dd>{fmt.pct(data.fees.total / Math.max(1, t!.volume))}</dd>
+                  <dt>Positions sold before expiry</dt>
+                  <dd>{fmt.pct(t!.exitRate)}</dd>
+                  <dt>Markets settled</dt>
+                  <dd>{fmt.int(t!.settledMarkets)}</dd>
+                </dl>
               </>
             ) : (
               <Skeleton h={300} />

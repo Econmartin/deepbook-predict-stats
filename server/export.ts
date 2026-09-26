@@ -27,6 +27,14 @@ import { pnlCurve, type Position, type Snapshot } from './stats.js';
 const MARKET_FILE_DAYS = 30;
 const WALLET_POSITIONS = 2000;
 
+/** Downsample a cumulative PnL curve to at most `n` points for sparklines. */
+function spark(curve: Array<{ t: number; pnl: number }>, n = 40): number[] {
+  if (curve.length <= n) return [0, ...curve.map((c) => c.pnl)];
+  const out = [0];
+  for (let i = 1; i <= n; i++) out.push(curve[Math.round((i / n) * (curve.length - 1))]!.pnl);
+  return out;
+}
+
 const pos = (p: Position) => ({ ...p, id: `${p.marketId}:${p.rootId}`, viaSessionKey: p.sender !== p.owner });
 
 function write(path: string, data: unknown) {
@@ -67,7 +75,13 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
   put('overview.json', {
     asOf,
     ...snap.overview,
-    topWinners: byPnl.slice(0, 10),
+    topWinners: byPnl.slice(0, 10).map((w) => ({ ...w, spark: spark(pnlCurve(snap.byOwner.get(w.owner) ?? [])) })),
+    // Skill board: held-to-expiry z-score, with a minimum sample so one lucky ticket can't top it.
+    topSkill: snap.wallets
+      .filter((w) => w.held.n >= 20 && w.held.z != null)
+      .sort((a, b) => b.held.z! - a.held.z!)
+      .slice(0, 10)
+      .map((w) => ({ ...w, spark: spark(pnlCurve(snap.byOwner.get(w.owner) ?? [])) })),
     recent: snap.positions.slice(-12).reverse().map(pos),
     liveMarkets: snap.markets.filter((m) => m.status !== 'settled').slice(0, 8),
   });

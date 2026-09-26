@@ -141,7 +141,8 @@ export interface Overview {
   hourly: Bucket[];
   calibrationByProb: CalBucket[];
   calibrationByTime: CalBucket[];
-  topWinners: WalletStats[];
+  topWinners: Array<WalletStats & { spark: number[] }>;
+  topSkill: Array<WalletStats & { spark: number[] }>;
   recent: Position[];
   liveMarkets: MarketStats[];
 }

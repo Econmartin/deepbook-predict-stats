@@ -901,3 +901,293 @@ footer {
 .live-card {
   animation: fadeIn 0.5s var(--ease) both;
 }
+
+/* ── front-page leaderboard ──────────────────────────── */
+
+:root {
+  --gold: #d4a017;
+  --gold-soft: rgba(212, 160, 23, 0.14);
+  --silver: #8e9aa6;
+  --silver-soft: rgba(142, 154, 166, 0.16);
+  --bronze: #c07a44;
+  --bronze-soft: rgba(192, 122, 68, 0.15);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gold: #ffd257;
+    --gold-soft: rgba(255, 210, 87, 0.13);
+    --silver: #c9d1d9;
+    --silver-soft: rgba(201, 209, 217, 0.12);
+    --bronze: #e39a64;
+    --bronze-soft: rgba(227, 154, 100, 0.13);
+  }
+}
+
+.hero.compact {
+  padding: 56px 0 28px;
+}
+.hero.compact h1 {
+  font-size: clamp(38px, 6vw, 68px);
+}
+.hero.compact p.lede {
+  font-size: clamp(17px, 1.9vw, 21px);
+  margin-top: 14px;
+}
+
+.leaders {
+  margin-top: 8px;
+}
+.leaders-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 26px;
+  text-align: center;
+}
+.leaders-head .sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: end;
+}
+.podium-card {
+  --tone: var(--silver);
+  --tone-soft: var(--silver-soft);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px 24px 20px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--tone-soft), transparent 55%), var(--bg-elev);
+  box-shadow: var(--shadow), inset 0 0 0 1px color-mix(in srgb, var(--tone) 28%, transparent);
+  color: var(--text);
+  transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+  animation: rise 0.7s var(--ease) both;
+  min-width: 0;
+}
+.podium-card:hover {
+  text-decoration: none;
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover), inset 0 0 0 1px color-mix(in srgb, var(--tone) 45%, transparent);
+}
+.podium-card.gold {
+  --tone: var(--gold);
+  --tone-soft: var(--gold-soft);
+}
+.podium-card.bronze {
+  --tone: var(--bronze);
+  --tone-soft: var(--bronze-soft);
+}
+/* #1 in the middle, raised, with a soft glow */
+.podium-card.rank-1 {
+  order: 2;
+  padding: 30px 28px 24px;
+  box-shadow: 0 24px 60px -24px color-mix(in srgb, var(--gold) 55%, transparent), var(--shadow),
+    inset 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent);
+  animation-delay: 0.05s;
+}
+.podium-card.rank-2 {
+  order: 1;
+  animation-delay: 0.15s;
+}
+.podium-card.rank-3 {
+  order: 3;
+  animation-delay: 0.22s;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.podium-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 30px;
+}
+.medal {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--tone) 80%, #fff), var(--tone));
+  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--tone) 60%, transparent);
+}
+.rank-1 .medal {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  .medal {
+    color: #111;
+  }
+}
+.podium-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.podium-addr {
+  font-size: 15px;
+  color: var(--text);
+}
+.podium-value {
+  font-size: clamp(30px, 3.6vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin-top: 12px;
+  white-space: nowrap;
+}
+.rank-1 .podium-value {
+  font-size: clamp(36px, 4.4vw, 52px);
+}
+.podium-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.podium-sub b {
+  font-weight: 600;
+}
+.podium-spark {
+  margin: 12px -4px 4px;
+}
+.podium-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-2);
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.podium-foot b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trading-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 12%, transparent);
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.trading-now .live-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.runners-up {
+  margin-top: 18px;
+}
+.runner {
+  display: grid;
+  grid-template-columns: 28px 32px minmax(0, 1fr) 110px 150px 120px;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 24px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.15s var(--ease);
+  animation: fadeIn 0.5s var(--ease) both;
+}
+.runner:hover {
+  background: var(--fill-2);
+}
+.runner.clickable {
+  cursor: pointer;
+}
+.runner-rank {
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.runner-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.runner-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.runner-sub b {
+  font-weight: 600;
+}
+.runner-value {
+  text-align: right;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+.runner-skill {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 13px;
+}
+.runners-foot {
+  padding: 14px 24px;
+  font-size: 14px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .runner {
+    grid-template-columns: 24px 32px minmax(0, 1fr) 90px 110px;
+  }
+  .runner-skill {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .podium {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .podium-card.rank-1 {
+    order: 1;
+  }
+  .podium-card.rank-2 {
+    order: 2;
+  }
+  .podium-card.rank-3 {
+    order: 3;
+  }
+  .runner {
+    grid-template-columns: 22px 28px minmax(0, 1fr) auto;
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .runner-spark {
+    display: none;
+  }
+}
