@@ -1,11 +1,17 @@
 # Index DeepBook Predict from the chain and publish the static site to
 # GitHub Pages. The previous run's database is pulled back from the live
 # site (predict.db.gz), so each run only pages new events.
+#
+# Cadence: GitHub's cron is best-effort and often skips frequent schedules,
+# so each run queues the next one itself (workflow_dispatch is allowed from
+# GITHUB_TOKEN). The concurrency group collapses duplicate chains, and the
+# cron below only restarts the chain if it ever breaks.
+# To pause publishing: Actions → Publish → Disable workflow.
 name: Publish
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/30 * * * *'
   push:
     branches: [main]
   workflow_dispatch:
@@ -14,6 +20,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: pages
@@ -72,3 +79,15 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  next:
+    # Queue the following run ~8 minutes after this one ends, even if it failed.
+    needs: publish
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: sleep 480
+      - run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}

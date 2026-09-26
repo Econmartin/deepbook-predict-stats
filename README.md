@@ -22,11 +22,14 @@ The live site is a static build on GitHub Pages, refreshed by
    publishes the database as `predict.db.gz`.
 5. Deploy to Pages.
 
+GitHub's cron is best-effort and often skips frequent schedules. Instead, each
+run queues the next one about 8 minutes after it finishes. A `*/30` cron only
+restarts the chain if it ever breaks. To pause publishing, disable the
+*Publish* workflow in the Actions tab.
+
 On a public repo this fits in GitHub's free tier: Actions minutes are free, and
 the export caps keep the site far below Pages' 1 GB limit (see
-`server/export.ts`). Scheduled runs can be delayed at busy times. GitHub also
-pauses scheduled workflows on public repos after 60 days with no commits. If
-that happens, re-enable the workflow in the Actions tab.
+`server/export.ts`).
 
 To set it up on a fork, go to **Settings → Pages → Source: GitHub Actions**,
 then run the *Publish* workflow once.
