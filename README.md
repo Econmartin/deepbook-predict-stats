@@ -8,21 +8,45 @@ trade links to a block explorer.
 It only reads. It never signs or sends a transaction, and it needs no keys or
 secrets. Anyone can rebuild the whole database from the chain.
 
-## Quick start
+## Hosting: GitHub Pages (default)
+
+The live site is a static build on GitHub Pages, refreshed by
+`.github/workflows/pages.yml` about every 10 minutes:
+
+1. Download the previous run's database from the live site (`predict.db.gz`).
+   If there isn't one, backfill from the first Predict event.
+2. `npm run sync`: page new events over gRPC and resolve settlements.
+3. `npm test` and `npm run verify`. If any payout doesn't reconcile with the
+   chain, the run fails and nothing is published.
+4. Build the frontend and `npm run export` the stats to static JSON. This also
+   publishes the database as `predict.db.gz`.
+5. Deploy to Pages.
+
+On a public repo this fits in GitHub's free tier: Actions minutes are free, and
+the export caps keep the site far below Pages' 1 GB limit (see
+`server/export.ts`). Scheduled runs can be delayed at busy times. GitHub also
+pauses scheduled workflows on public repos after 60 days with no commits. If
+that happens, re-enable the workflow in the Actions tab.
+
+To set it up on a fork, go to **Settings → Pages → Source: GitHub Actions**,
+then run the *Publish* workflow once.
+
+## Running locally
 
 ```bash
 npm install
 npm run sync      # one-shot backfill from the first Predict event (~2 min)
 npm run build     # build the frontend into web/dist
-npm start         # API + site on http://localhost:8787, re-indexing every 15s
+npm start         # site on http://localhost:8787, re-indexing every 15s
 ```
 
-To develop with hot reload, run `npm run dev` (API on :8787, Vite on :5173).
+`npm run dev` runs the server on :8787 and Vite with hot reload on :5173.
 
 | Script              | What it does                                                        |
 | ------------------- | ------------------------------------------------------------------- |
 | `npm run sync`      | Runs one indexing pass. Safe to call from cron.                     |
-| `npm start`         | Serves the API and static site, with the indexer running in-process. |
+| `npm run export -- <dir>` | Writes the static JSON and `predict.db.gz` into `<dir>`.      |
+| `npm start`         | Self-hosted mode: indexer, export and site in one process.          |
 | `npm run verify`    | Checks computed payouts against on-chain claims. Exits 1 on any mismatch. |
 | `npm test`          | Runs the correctness tests (`server/correctness.test.ts`).          |
 | `npm run typecheck` | Type-checks the server and the web app.                             |
@@ -31,10 +55,12 @@ Environment variables (all optional):
 
 | Var                | Default                                  |                                              |
 | ------------------ | ---------------------------------------- | -------------------------------------------- |
-| `PORT`             | `8787`                                   | HTTP port                                    |
+| `PORT`             | `8787`                                   | HTTP port (self-hosted)                      |
 | `DB_PATH`          | `data/predict.db`                        | SQLite file                                  |
-| `SYNC_INTERVAL_MS` | `15000`                                  | In-process poll interval. `0` turns it off and leaves syncing to cron. |
+| `EXPORT_DIR`       | `data/site`                              | Where self-hosted mode writes the JSON       |
+| `SYNC_INTERVAL_MS` | `15000`                                  | In-process poll interval. `0` turns it off.  |
 | `SUI_GRPC_URL`     | `https://fullnode.mainnet.sui.io:443`    | gRPC endpoint                                |
+| `BASE_PATH`        | `/`                                      | Site base path at build time (`/<repo>/` on Pages) |
 
 ## Data source
 
@@ -109,24 +135,25 @@ These are what a naive script gets wrong. Each one is covered by a test in
   subsidies, plus builder fees and the congestion surcharge. Referral payouts
   are a share of the trading fee, not an extra charge.
 
-## API
+## Data files
 
-All endpoints are read-only JSON: `GET /api/overview`,
-`/api/leaderboard?by=pnl|skill&dir=desc|asc&min=N`, `/api/wallet/:address`,
-`/api/markets?status=open|settling|settled&sort=expiry|volume|traders`,
-`/api/market/:id`, `/api/meta`, `/api/health`.
+The site reads plain JSON, and so can anything else. Paths are relative to the
+site root:
 
-## Deploying on your own server
+- `data/overview.json`: totals, daily and hourly series, fees, calibration
+- `data/wallets.json`: stats for every wallet
+- `data/wallet/<address>.json`: one wallet's stats, PnL curve and newest 2,000 trades
+- `data/markets/{recent,top-volume,top-traders}.json`: market lists
+- `data/market/<id>.json`: one market and its trades (last 30 days plus top markets)
+- `data/meta.json`: package ids, gRPC endpoint and as-of info
+- `predict.db.gz`: the full SQLite database
 
-`deploy/predict-stats.service` is a hardened systemd unit that runs the API
-with the indexer in-process. `deploy/Caddyfile` is a reverse proxy with
-automatic HTTPS. Point it at your own domain.
+## Self-hosting instead
 
-```bash
-npm ci && npm run build
-sudo cp deploy/predict-stats.service /etc/systemd/system/
-sudo systemctl enable --now predict-stats
-```
+The `Dockerfile` runs indexer, export and site in one container. Mount a volume
+at `/data` and expose port 8787. The health check is `/health`. This works on
+Coolify or any Docker host. For a bare server, `deploy/` has a systemd unit and
+a Caddyfile.
 
 ## Layout
 
@@ -134,7 +161,9 @@ sudo systemctl enable --now predict-stats
 server/chain.ts     gRPC client, SDK address book, event paging, market reads
 server/indexer.ts   event → SQLite, market discovery, settlement resolution
 server/stats.ts     positions, wallet/market stats, overview, calibration
-server/server.ts    Hono read API + static site + poller
+server/export.ts    snapshot → static JSON (+ gzipped DB)
+server/server.ts    self-hosted mode: poller + export + static server
+.github/workflows/  scheduled index → verify → build → GitHub Pages
 web/                Vite + React frontend, hand-drawn SVG charts
 ```
 

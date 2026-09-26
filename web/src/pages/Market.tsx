@@ -1,6 +1,6 @@
 import { PositionsTable } from '../components/tables';
 import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat, StatusPill } from '../components/ui';
-import { fmt, pnlClass, useApi, useExplorer, type AsOf, type MarketStats, type Position } from '../lib';
+import { fmt, normalizeAddress, pnlClass, useData, useExplorer, type AsOf, type MarketStats, type Position } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -9,8 +9,23 @@ interface Resp {
 }
 
 export default function Market({ id }: { id: string }) {
-  const { data, error } = useApi<Resp>(`/api/market/${encodeURIComponent(id)}`);
+  const mid = normalizeAddress(id);
+  const { data, error, notFound } = useData<Resp>(mid ? `market/${mid}.json` : null);
   const ex = useExplorer();
+  if (!mid || notFound)
+    return (
+      <div className="page-head fade-in">
+        <h1>Market not published</h1>
+        <p>
+          Per-market pages cover the last 30 days plus the busiest markets.{' '}
+          {mid && (
+            <a href={ex.object(mid)} target="_blank" rel="noreferrer noopener">
+              View this object on {ex.name} ›
+            </a>
+          )}
+        </p>
+      </div>
+    );
   if (error) return <div className="page-head"><ErrorNote error={error} /></div>;
   if (!data) return <div className="page-head"><Skeleton h={420} /></div>;
   const m = data.market;

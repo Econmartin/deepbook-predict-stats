@@ -1,0 +1,74 @@
+# Index DeepBook Predict from the chain and publish the static site to
+# GitHub Pages. The previous run's database is pulled back from the live
+# site (predict.db.gz), so each run only pages new events.
+name: Publish
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Restore previous database from the live site
+        run: |
+          mkdir -p data
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          url="https://${owner}.github.io/${repo}/predict.db.gz"
+          if curl -fsSL "$url" -o data/predict.db.gz; then
+            gunzip -f data/predict.db.gz && echo "restored $(du -h data/predict.db | cut -f1) from $url"
+          else
+            echo "no published database yet; backfilling from the first event"
+          fi
+
+      - name: Index new chain events
+        run: npm run sync
+
+      - name: Tests
+        run: npm test
+
+      - name: Reconcile payouts against on-chain claims
+        run: npm run verify
+
+      - name: Build site
+        run: |
+          repo="${GITHUB_REPOSITORY#*/}"
+          BASE_PATH="/${repo}/" npm run build
+          npm run export -- web/dist
+          cp web/dist/index.html web/dist/404.html
+          touch web/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+          retention-days: 1
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

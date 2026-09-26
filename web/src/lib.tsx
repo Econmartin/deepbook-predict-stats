@@ -144,22 +144,40 @@ export interface Overview {
   liveMarkets: MarketStats[];
 }
 
-// ── fetching ───────────────────────────────────────────────────────────────
+// ── fetching (static JSON written by server/export.ts) ────────────────────
 
-export function useApi<T>(path: string | null, refreshMs = 30_000) {
+/** Site base path: "/" self-hosted, "/<repo>/" on GitHub Pages. Always ends in "/". */
+export const BASE = import.meta.env.BASE_URL;
+
+export const dataUrl = (p: string) => `${BASE}data/${p}`;
+
+/** 0x-prefixed, 64-hex, lowercase — the form the export uses for file names. */
+export function normalizeAddress(a: string): string | null {
+  const h = a.trim().toLowerCase().replace(/^0x/, '');
+  if (!/^[0-9a-f]{1,64}$/.test(h)) return null;
+  return `0x${h.padStart(64, '0')}`;
+}
+
+export function useData<T>(file: string | null, refreshMs = 60_000) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   useEffect(() => {
-    if (!path) return;
+    if (!file) return;
     let alive = true;
     setData(null);
     setError(null);
+    setNotFound(false);
     const load = () =>
-      fetch(path)
+      fetch(dataUrl(file), { cache: 'no-cache' })
         .then(async (r) => {
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.error ?? r.statusText);
-          if (alive) setData(j as T);
+          if (r.status === 404) {
+            if (alive) setNotFound(true);
+            return;
+          }
+          if (!r.ok) throw new Error(r.statusText);
+          const j = (await r.json()) as T;
+          if (alive) setData(j);
         })
         .catch((e) => alive && setError(String(e.message ?? e)));
     void load();
@@ -168,8 +186,8 @@ export function useApi<T>(path: string | null, refreshMs = 30_000) {
       alive = false;
       if (t) clearInterval(t);
     };
-  }, [path, refreshMs]);
-  return { data, error };
+  }, [file, refreshMs]);
+  return { data, error, notFound };
 }
 
 // ── formatting ─────────────────────────────────────────────────────────────
@@ -279,16 +297,23 @@ export function useExplorer() {
 
 const RouteCtx = createContext<{ path: string; go: (to: string) => void }>({ path: '/', go: () => {} });
 
+/** App paths are base-relative ("/wallet/0x…"); the URL carries the base prefix. */
+const toUrl = (to: string) => BASE + to.replace(/^\//, '');
+function currentPath() {
+  const p = location.pathname + location.search;
+  return p.startsWith(BASE) ? '/' + p.slice(BASE.length) : p;
+}
+
 export function RouterProvider({ children }: { children: ReactNode }) {
-  const [path, setPath] = useState(() => location.pathname + location.search);
+  const [path, setPath] = useState(currentPath);
   useEffect(() => {
-    const on = () => setPath(location.pathname + location.search);
+    const on = () => setPath(currentPath());
     addEventListener('popstate', on);
     return () => removeEventListener('popstate', on);
   }, []);
   const go = useCallback((to: string) => {
-    if (to === location.pathname + location.search) return;
-    history.pushState(null, '', to);
+    if (to === currentPath()) return;
+    history.pushState(null, '', toUrl(to));
     setPath(to);
     scrollTo({ top: 0 });
   }, []);
@@ -301,7 +326,7 @@ export function Link({ to, children, className }: { to: string; children: ReactN
   const { go } = useRoute();
   return (
     <a
-      href={to}
+      href={toUrl(to)}
       className={className}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;

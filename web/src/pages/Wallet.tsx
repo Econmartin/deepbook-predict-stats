@@ -1,7 +1,7 @@
 import { AreaLine } from '../components/charts';
 import { PositionsTable } from '../components/tables';
 import { Addr, AsOfBadge, Avatar, ErrorNote, Ext, SideBar, Skeleton, Stat, ZMeter } from '../components/ui';
-import { fmt, pnlClass, useApi, useExplorer, type AsOf, type Position, type WalletStats } from '../lib';
+import { fmt, normalizeAddress, pnlClass, useData, useExplorer, type AsOf, type Position, type WalletStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -15,8 +15,28 @@ interface Resp {
 }
 
 export default function Wallet({ address }: { address: string }) {
-  const { data, error } = useApi<Resp>(`/api/wallet/${encodeURIComponent(address)}`);
+  const owner = normalizeAddress(address);
+  const { data, error, notFound } = useData<Resp>(owner ? `wallet/${owner}.json` : null);
   const ex = useExplorer();
+  if (!owner) return <div className="page-head"><h1>Not a Sui address</h1></div>;
+  if (notFound)
+    return (
+      <div className="page-head fade-in">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Avatar address={owner} size={56} />
+          <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>{fmt.short(owner)}</h1>
+        </div>
+        <p className="mono" style={{ wordBreak: 'break-all', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+          {owner}
+          <Ext href={ex.account(owner)} label={`Open on ${ex.name}`}>
+            {ex.name}&nbsp;
+          </Ext>
+        </p>
+        <div className="card empty" style={{ marginTop: 28 }}>
+          This address hasn’t traded on DeepBook Predict yet.
+        </div>
+      </div>
+    );
   if (error) return <div className="page-head"><ErrorNote error={error} /></div>;
   if (!data) return <div className="page-head"><Skeleton h={420} /></div>;
   const s = data.stats;

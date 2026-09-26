@@ -9,7 +9,8 @@
     "start": "tsx server/server.ts",
     "dev": "concurrently -k -n api,web \"SYNC_INTERVAL_MS=15000 tsx watch server/server.ts\" \"vite --config web/vite.config.ts\"",
     "build": "vite build --config web/vite.config.ts",
-    "verify": "tsx server/verify.ts"
+    "verify": "tsx server/verify.ts",
+    "export": "tsx server/export.ts"
   },
   "type": "module",
   "dependencies": {

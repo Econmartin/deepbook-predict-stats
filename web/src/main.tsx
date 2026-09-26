@@ -1,15 +1,13 @@
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { ExplorerProvider, Link, RouterProvider, useExplorer, useRoute } from './lib';
+import { BASE, ExplorerProvider, Link, normalizeAddress, RouterProvider, useExplorer, useRoute } from './lib';
 import Overview from './pages/Overview';
 import Leaderboard from './pages/Leaderboard';
 import Markets from './pages/Markets';
 import Market from './pages/Market';
 import Wallet from './pages/Wallet';
 import About from './pages/About';
-
-const ADDR = /^(0x)?[0-9a-fA-F]{1,64}$/;
 
 function Search() {
   const { go } = useRoute();
@@ -20,11 +18,11 @@ function Search() {
       className="nav-search"
       onSubmit={(e) => {
         e.preventDefault();
-        const v = q.trim();
-        if (!ADDR.test(v)) return setBad(true);
+        const a = normalizeAddress(q);
+        if (!a) return setBad(true);
         setBad(false);
         setQ('');
-        go(`/wallet/${v.startsWith('0x') ? v : `0x${v}`}`);
+        go(`/wallet/${a}`);
       }}
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -53,7 +51,7 @@ function Nav() {
     <nav className="nav">
       <div className="nav-inner">
         <Link to="/" className="brand">
-          <img src="/favicon.svg" alt="" />
+          <img src={`${BASE}favicon.svg`} alt="" />
           Predict Stats
         </Link>
         <div className="nav-links">

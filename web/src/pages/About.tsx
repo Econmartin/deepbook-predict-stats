@@ -1,4 +1,4 @@
-import { useApi, useExplorer, type AsOf } from '../lib';
+import { useData, useExplorer, type AsOf } from '../lib';
 
 interface Meta {
   asOf: AsOf;
@@ -10,7 +10,7 @@ interface Meta {
 }
 
 export default function About() {
-  const { data } = useApi<Meta>('/api/meta', 0);
+  const { data } = useData<Meta>('meta.json', 0);
   const ex = useExplorer();
   return (
     <div className="prose">

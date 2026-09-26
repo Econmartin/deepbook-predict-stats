@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AreaLine, Calibration, CompareRows, StackedBars } from '../components/charts';
 import { PositionsTable } from '../components/tables';
 import { Addr, AsOfBadge, ErrorNote, MarketLink, SideBar, Skeleton, Stat, StatusPill } from '../components/ui';
-import { fmt, Link, pnlClass, useApi, type Bucket, type Overview as O } from '../lib';
+import { fmt, Link, pnlClass, useData, type Bucket, type Overview as O } from '../lib';
 
 const SIDE_SERIES = [
   { key: 'up', label: 'Up', color: 'var(--up)', value: (d: Bucket) => d.up },
@@ -11,7 +11,7 @@ const SIDE_SERIES = [
 ];
 
 export default function Overview() {
-  const { data, error } = useApi<O>('/api/overview', 20_000);
+  const { data, error } = useData<O>('overview.json');
   const [grain, setGrain] = useState<'daily' | 'hourly'>('daily');
   if (error) return <ErrorNote error={error} />;
 

@@ -1,13 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRowNav } from '../components/tables';
 import { Addr, AsOfBadge, ErrorNote, SideBar, Skeleton, ZMeter } from '../components/ui';
-import { fmt, pnlClass, useApi, type AsOf, type WalletStats } from '../lib';
+import { fmt, pnlClass, useData, type AsOf, type WalletStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
-  by: 'pnl' | 'skill';
-  min: number;
-  total: number;
   rows: WalletStats[];
 }
 
@@ -15,7 +12,16 @@ export default function Leaderboard() {
   const [by, setBy] = useState<'pnl' | 'skill'>('pnl');
   const [dir, setDir] = useState<'desc' | 'asc'>('desc');
   const [min, setMin] = useState(by === 'skill' ? 20 : 5);
-  const { data, error } = useApi<Resp>(`/api/leaderboard?by=${by}&dir=${dir}&min=${min}&limit=200`);
+  const { data: all, error } = useData<Resp>('wallets.json');
+  const data = useMemo(() => {
+    if (!all) return null;
+    const sign = dir === 'asc' ? 1 : -1;
+    const rows =
+      by === 'skill'
+        ? all.rows.filter((w) => w.held.n >= min && w.held.z != null).sort((a, b) => sign * (a.held.z! - b.held.z!))
+        : all.rows.filter((w) => w.positions - w.open >= min).sort((a, b) => sign * (a.realizedPnl - b.realizedPnl));
+    return { asOf: all.asOf, total: rows.length, rows: rows.slice(0, 200) };
+  }, [all, by, dir, min]);
   const nav = useRowNav();
 
   function switchTo(b: 'pnl' | 'skill') {

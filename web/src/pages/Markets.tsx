@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRowNav } from '../components/tables';
 import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, StatusPill } from '../components/ui';
-import { fmt, pnlClass, useApi, useExplorer, type AsOf, type MarketStats } from '../lib';
+import { fmt, pnlClass, useData, useExplorer, type AsOf, type MarketStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -15,7 +15,13 @@ export default function Markets() {
   const [status, setStatus] = useState<'' | 'open' | 'settling' | 'settled'>('');
   const [sort, setSort] = useState<'expiry' | 'volume' | 'traders'>('expiry');
   const [offset, setOffset] = useState(0);
-  const { data, error } = useApi<Resp>(`/api/markets?status=${status}&sort=${sort}&limit=${LIMIT}&offset=${offset}`);
+  const file = sort === 'volume' ? 'markets/top-volume.json' : sort === 'traders' ? 'markets/top-traders.json' : 'markets/recent.json';
+  const { data: src, error } = useData<Resp>(file);
+  const data = useMemo(() => {
+    if (!src) return null;
+    const rows = status ? src.rows.filter((m) => m.status === status) : src.rows;
+    return { asOf: src.asOf, all: src.total, total: rows.length, rows: rows.slice(offset, offset + LIMIT) };
+  }, [src, status, offset]);
   const nav = useRowNav();
   const ex = useExplorer();
 
@@ -59,7 +65,11 @@ export default function Markets() {
             <option value="traders">Traders</option>
           </select>
         </label>
-        {data && <span className="faint" style={{ fontSize: 13, marginLeft: 'auto' }}>{fmt.int(data.total)} markets</span>}
+        {data && (
+          <span className="faint" style={{ fontSize: 13, marginLeft: 'auto' }}>
+            {sort === 'expiry' ? `${fmt.int(data.all)} markets · showing the latest ${fmt.int(Math.min(1000, data.all))}` : `top ${fmt.int(Math.min(500, data.all))} of ${fmt.int(data.all)}`}
+          </span>
+        )}
       </div>
 
       {error && <ErrorNote error={error} />}
