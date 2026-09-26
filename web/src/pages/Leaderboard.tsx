@@ -11,7 +11,7 @@ interface Resp {
 export default function Leaderboard() {
   const [by, setBy] = useState<'pnl' | 'skill'>('pnl');
   const [dir, setDir] = useState<'desc' | 'asc'>('desc');
-  const [min, setMin] = useState(by === 'skill' ? 20 : 5);
+  const [min, setMin] = useState(by === 'skill' ? 20 : 0);
   const { data: all, error } = useData<Resp>('wallets.json');
   const data = useMemo(() => {
     if (!all) return null;
@@ -26,7 +26,7 @@ export default function Leaderboard() {
 
   function switchTo(b: 'pnl' | 'skill') {
     setBy(b);
-    setMin(b === 'skill' ? 20 : 5);
+    setMin(b === 'skill' ? 20 : 0);
   }
 
   return (
@@ -61,9 +61,10 @@ export default function Leaderboard() {
         <label>
           Min. {by === 'skill' ? 'held positions' : 'closed trades'}
           <select value={min} onChange={(e) => setMin(Number(e.target.value))}>
-            {(by === 'skill' ? [10, 20, 50, 100] : [1, 5, 20, 50]).map((n) => (
+            {/* Profit defaults to everyone, matching the front page and wallet ranks. */}
+            {(by === 'skill' ? [10, 20, 50, 100] : [0, 5, 20, 50]).map((n) => (
               <option key={n} value={n}>
-                {n}
+                {n === 0 ? 'Any' : n}
               </option>
             ))}
           </select>
