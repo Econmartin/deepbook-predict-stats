@@ -1,0 +1,28 @@
+# systemd unit — always-on API + in-process indexer.
+# Install: copy the repo to /opt/predict-stats, `npm ci && npm run build`,
+# then: sudo cp deploy/predict-stats.service /etc/systemd/system/ &&
+#       sudo systemctl enable --now predict-stats
+[Unit]
+Description=DeepBook Predict community stats
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/predict-stats
+Environment=NODE_ENV=production
+Environment=PORT=8787
+Environment=DB_PATH=/var/lib/predict-stats/predict.db
+Environment=SYNC_INTERVAL_MS=15000
+ExecStart=/usr/bin/node --import tsx server/server.ts
+Restart=always
+RestartSec=5
+DynamicUser=yes
+StateDirectory=predict-stats
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

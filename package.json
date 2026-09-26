@@ -1,0 +1,35 @@
+{
+  "name": "deepbook-predict-stats",
+  "version": "1.0.0",
+  "description": "Community stats for DeepBook Predict on Sui, computed from public on-chain data",
+  "scripts": {
+    "test": "node --import tsx --test server/*.test.ts",
+    "sync": "tsx server/sync.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
+    "start": "tsx server/server.ts",
+    "dev": "concurrently -k -n api,web \"SYNC_INTERVAL_MS=15000 tsx watch server/server.ts\" \"vite --config web/vite.config.ts\"",
+    "build": "vite build --config web/vite.config.ts",
+    "verify": "tsx server/verify.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@mysten/deepbook-v3": "^2.6.4",
+    "@mysten/sui": "^2.33.1",
+    "hono": "^4.13.9",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1"
+  },
+  "private": true,
+  "license": "MIT"
+}

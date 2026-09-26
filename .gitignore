@@ -1,0 +1,9 @@
+node_modules
+data/
+dist/
+web/dist/
+scratch/
+*.db
+*.db-*
+.env
+.claude/

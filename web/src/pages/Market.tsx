@@ -1,0 +1,68 @@
+import { PositionsTable } from '../components/tables';
+import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat, StatusPill } from '../components/ui';
+import { fmt, pnlClass, useApi, useExplorer, type AsOf, type MarketStats, type Position } from '../lib';
+
+interface Resp {
+  asOf: AsOf;
+  market: MarketStats;
+  positions: Position[];
+}
+
+export default function Market({ id }: { id: string }) {
+  const { data, error } = useApi<Resp>(`/api/market/${encodeURIComponent(id)}`);
+  const ex = useExplorer();
+  if (error) return <div className="page-head"><ErrorNote error={error} /></div>;
+  if (!data) return <div className="page-head"><Skeleton h={420} /></div>;
+  const m = data.market;
+  const left = m.expiryMs ? (m.expiryMs - Date.now()) / 1000 : null;
+
+  return (
+    <>
+      <div className="page-head fade-in">
+        <div className="eyebrow" style={{ gap: 10 }}>
+          {m.underlying} market <StatusPill status={m.status} />
+        </div>
+        <h1 style={{ fontSize: 'clamp(30px, 4.4vw, 48px)' }}>Expires {m.expiryMs ? fmt.time(m.expiryMs) : '—'}</h1>
+        <p className="mono" style={{ wordBreak: 'break-all', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+          {m.marketId}
+          <Ext href={ex.object(m.marketId)} label={`Open on ${ex.name}`}>
+            {ex.name}&nbsp;
+          </Ext>
+        </p>
+        <AsOfBadge asOf={data.asOf} />
+      </div>
+
+      <div className="hero-stats fade-in">
+        <div>
+          <Stat
+            label="Settlement price"
+            value={m.settlement == null ? '—' : fmt.price(m.settlement)}
+            foot={m.status === 'settled' ? 'read from the market object' : left != null && left > 0 ? `expires in ${fmt.dur(left)}` : 'waiting for the chain to settle'}
+          />
+        </div>
+        <div>
+          <Stat label="Volume" value={fmt.usd(m.volume)} foot={<>{fmt.usd(m.notional)} max payout</>} />
+        </div>
+        <div>
+          <Stat label="Traders" value={fmt.int(m.traders)} foot={<>{fmt.int(m.positions)} {m.positions === 1 ? 'trade' : 'trades'} · {m.exits} sold early</>} />
+        </div>
+        <div>
+          <Stat
+            label="Traders’ net result"
+            value={m.traderPnl == null ? '—' : <span className={pnlClass(m.traderPnl)}>{fmt.signed(m.traderPnl)}</span>}
+            foot={<SideBar sides={m.sides} />}
+          />
+        </div>
+      </div>
+
+      <section>
+        <div className="section-head">
+          <h2>Trades</h2>
+        </div>
+        <div className="card flush">
+          <PositionsTable rows={data.positions} showOwner showMarket={false} />
+        </div>
+      </section>
+    </>
+  );
+}
