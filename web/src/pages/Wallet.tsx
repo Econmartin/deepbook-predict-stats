@@ -1,4 +1,5 @@
 import { AreaLine } from '../components/charts';
+import { useLive } from '../live';
 import { PositionsTable } from '../components/tables';
 import { Addr, AsOfBadge, Avatar, ErrorNote, Ext, SideBar, Skeleton, Stat, ZMeter } from '../components/ui';
 import { fmt, normalizeAddress, pnlClass, useData, useExplorer, type AsOf, type Position, type WalletStats } from '../lib';
@@ -18,6 +19,8 @@ export default function Wallet({ address }: { address: string }) {
   const owner = normalizeAddress(address);
   const { data, error, notFound } = useData<Resp>(owner ? `wallet/${owner}.json` : null);
   const ex = useExplorer();
+  const live = useLive();
+  const liveTrades = live.trades.filter((p) => p.owner === owner);
   if (!owner) return <div className="page-head"><h1>Not a Sui address</h1></div>;
   if (notFound)
     return (
@@ -32,14 +35,28 @@ export default function Wallet({ address }: { address: string }) {
             {ex.name}&nbsp;
           </Ext>
         </p>
-        <div className="card empty" style={{ marginTop: 28 }}>
-          This address hasn’t traded on DeepBook Predict yet.
-        </div>
+        {liveTrades.length ? (
+          <section>
+            <div className="section-head">
+              <h2>New trades</h2>
+              <span className="sub">live from the chain · full stats arrive with the next snapshot</span>
+            </div>
+            <div className="card flush">
+              <PositionsTable rows={liveTrades} />
+            </div>
+          </section>
+        ) : (
+          <div className="card empty" style={{ marginTop: 28 }}>
+            This address hasn’t traded on DeepBook Predict yet.
+          </div>
+        )}
       </div>
     );
   if (error) return <div className="page-head"><ErrorNote error={error} /></div>;
   if (!data) return <div className="page-head"><Skeleton h={420} /></div>;
   const s = data.stats;
+  const seen = new Set<string>();
+  const rows = [...liveTrades, ...data.positions].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
   const sideTotal = s.sides.up + s.sides.down + s.sides.range;
 
   return (
@@ -172,11 +189,17 @@ export default function Wallet({ address }: { address: string }) {
             <div className="section-head">
               <h2>Trades</h2>
               <span className="sub">
+                {liveTrades.length > 0 && (
+                  <>
+                    <span className="live-dot" style={{ display: 'inline-block', width: 7, height: 7, marginRight: 8 }} />
+                    {liveTrades.length} new live ·{' '}
+                  </>
+                )}
                 {fmt.int(data.positions.length)} {data.positions.length < s.positions ? `of ${fmt.int(s.positions)} ` : ''}· newest first
               </span>
             </div>
             <div className="card flush">
-              <PositionsTable rows={data.positions} />
+              <PositionsTable rows={rows} />
             </div>
           </section>
         </>

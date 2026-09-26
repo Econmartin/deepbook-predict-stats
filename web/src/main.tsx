@@ -8,6 +8,7 @@ import Markets from './pages/Markets';
 import Market from './pages/Market';
 import Wallet from './pages/Wallet';
 import About from './pages/About';
+import { LiveProvider } from './live';
 
 function Search() {
   const { go } = useRoute();
@@ -117,9 +118,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider>
       <ExplorerProvider>
-        <Nav />
-        <Routes />
-        <Footer />
+        <LiveProvider>
+          <Nav />
+          <Routes />
+          <Footer />
+        </LiveProvider>
       </ExplorerProvider>
     </RouterProvider>
   </StrictMode>,

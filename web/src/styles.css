@@ -149,6 +149,7 @@ a:hover {
   letter-spacing: -0.01em;
 }
 .nav-links a {
+  white-space: nowrap;
   color: var(--text-2);
   transition: color 0.2s var(--ease);
 }
@@ -884,4 +885,19 @@ footer {
   .hero-stats > div {
     padding: 18px 16px;
   }
+}
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.odds {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.live-card {
+  animation: fadeIn 0.5s var(--ease) both;
 }

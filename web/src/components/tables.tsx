@@ -32,7 +32,10 @@ export function PositionsTable({ rows, showOwner = false, showMarket = true }: {
           <tbody>
             {view.map((p) => (
               <tr key={p.id}>
-                <td className="muted">{fmt.time(p.mintedAtMs)}</td>
+                <td className="muted">
+                  {p.live && <span className="live-dot" title="Read live from the chain" style={{ display: 'inline-block', marginRight: 8, verticalAlign: 'middle', width: 7, height: 7 }} />}
+                  {fmt.time(p.mintedAtMs)}
+                </td>
                 {showOwner && (
                   <td>
                     <Addr address={p.owner} />

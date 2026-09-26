@@ -1,4 +1,5 @@
 import { PositionsTable } from '../components/tables';
+import { useLive } from '../live';
 import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat, StatusPill } from '../components/ui';
 import { fmt, normalizeAddress, pnlClass, useData, useExplorer, type AsOf, type MarketStats, type Position } from '../lib';
 
@@ -12,23 +13,38 @@ export default function Market({ id }: { id: string }) {
   const mid = normalizeAddress(id);
   const { data, error, notFound } = useData<Resp>(mid ? `market/${mid}.json` : null);
   const ex = useExplorer();
-  if (!mid || notFound)
+  const live = useLive();
+  const liveTrades = live.trades.filter((p) => p.marketId === mid);
+  if (!mid || notFound) {
+    const lm = live.markets.find((m) => m.marketId === mid);
     return (
       <div className="page-head fade-in">
-        <h1>Market not published</h1>
+        <h1>{lm || liveTrades.length ? 'New market' : 'Market not published'}</h1>
         <p>
-          Per-market pages cover the last 30 days plus the busiest markets.{' '}
+          {lm || liveTrades.length
+            ? 'This market is newer than the last snapshot. Its trades are shown live from the chain.'
+            : 'Per-market pages cover the last 30 days plus the busiest markets.'}{' '}
           {mid && (
             <a href={ex.object(mid)} target="_blank" rel="noreferrer noopener">
               View this object on {ex.name} ›
             </a>
           )}
         </p>
+        {liveTrades.length > 0 && (
+          <section>
+            <div className="card flush">
+              <PositionsTable rows={liveTrades} showOwner showMarket={false} />
+            </div>
+          </section>
+        )}
       </div>
     );
+  }
   if (error) return <div className="page-head"><ErrorNote error={error} /></div>;
   if (!data) return <div className="page-head"><Skeleton h={420} /></div>;
   const m = data.market;
+  const seen = new Set<string>();
+  const rows = [...liveTrades, ...data.positions].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
   const left = m.expiryMs ? (m.expiryMs - Date.now()) / 1000 : null;
 
   return (
@@ -75,7 +91,7 @@ export default function Market({ id }: { id: string }) {
           <h2>Trades</h2>
         </div>
         <div className="card flush">
-          <PositionsTable rows={data.positions} showOwner showMarket={false} />
+          <PositionsTable rows={rows} showOwner showMarket={false} />
         </div>
       </section>
     </>

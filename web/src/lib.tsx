@@ -44,6 +44,8 @@ export interface Position {
   pnl: number | null;
   resolvedAtMs: number | null;
   secondsToExpiry: number | null;
+  /** Read from the chain in the browser, newer than the snapshot. */
+  live?: boolean;
 }
 
 export interface WalletStats {

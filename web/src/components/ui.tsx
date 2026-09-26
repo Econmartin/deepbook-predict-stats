@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { fmt, Link, useExplorer, type AsOf, type Side, type Status } from '../lib';
+import { useLive, useNow } from '../live';
 
 export function ExtIcon({ size = 12 }: { size?: number }) {
   return (
@@ -85,11 +86,16 @@ export function StatusPill({ status }: { status: Status | 'settled' }) {
 
 export function AsOfBadge({ asOf }: { asOf: AsOf | undefined }) {
   const ex = useExplorer();
+  const live = useLive();
+  useNow(5000);
   if (!asOf) return null;
+  const isLive = live.status === 'live' && live.updatedMs != null && Date.now() - live.updatedMs < 60_000;
   return (
     <span className="asof">
-      <span className="live-dot" />
-      Indexed through{' '}
+      <span className={isLive ? 'live-dot' : 'dot faint'} />
+      {isLive ? <b style={{ fontWeight: 600 }}>Live</b> : live.status === 'error' ? 'Offline' : 'Connecting'}
+      <span className="faint">·</span>
+      <span className="sync">stats through</span>
       {asOf.checkpoint ? (
         <a href={ex.checkpoint(asOf.checkpoint)} target="_blank" rel="noreferrer noopener" className="num">
           checkpoint {fmt.int(asOf.checkpoint)}
@@ -97,8 +103,7 @@ export function AsOfBadge({ asOf }: { asOf: AsOf | undefined }) {
       ) : (
         '—'
       )}
-      <span className="faint sync">·</span>
-      <span className="sync">synced {fmt.ago(asOf.lastSyncMs)}</span>
+      <span className="faint sync">({fmt.ago(asOf.lastSyncMs)})</span>
     </span>
   );
 }

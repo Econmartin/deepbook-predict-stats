@@ -331,7 +331,13 @@ interface Bucket {
 
 export interface Snapshot {
   builtAtMs: number;
-  asOf: { checkpoint: number | null; lastEventMs: number | null; lastSyncMs: number | null };
+  asOf: {
+    checkpoint: number | null;
+    lastEventMs: number | null;
+    lastSyncMs: number | null;
+    /** Newest checkpoint in the mint table; the mint stream was fully paged through it. */
+    mintCheckpoint: number | null;
+  };
   positions: Position[];
   byOwner: Map<string, Position[]>;
   byMarket: Map<string, Position[]>;
@@ -502,12 +508,14 @@ export function buildSnapshot(db: Db, nowMs = Date.now()): Snapshot {
   const cp = getMeta(db, 'last_checkpoint');
   const le = getMeta(db, 'last_event_ms');
   const ls = getMeta(db, 'last_sync_ms');
+  const mc = (db.prepare('SELECT MAX(checkpoint) AS c FROM mints').get() as { c: number | null }).c;
   return {
     builtAtMs: nowMs,
     asOf: {
       checkpoint: cp ? Number(cp) : null,
       lastEventMs: le ? Number(le) : null,
       lastSyncMs: ls ? Number(ls) : null,
+      mintCheckpoint: mc,
     },
     positions,
     byOwner,

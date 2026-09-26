@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useRowNav } from '../components/tables';
+import { useLive } from '../live';
 import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, StatusPill } from '../components/ui';
 import { fmt, pnlClass, useData, useExplorer, type AsOf, type MarketStats } from '../lib';
 
@@ -17,11 +18,17 @@ export default function Markets() {
   const [offset, setOffset] = useState(0);
   const file = sort === 'volume' ? 'markets/top-volume.json' : sort === 'traders' ? 'markets/top-traders.json' : 'markets/recent.json';
   const { data: src, error } = useData<Resp>(file);
+  const live = useLive();
   const data = useMemo(() => {
     if (!src) return null;
-    const rows = status ? src.rows.filter((m) => m.status === status) : src.rows;
+    // Newest-expiry view: markets newer than the snapshot come live from the chain.
+    const known = new Set(src.rows.map((m) => m.marketId));
+    const fresh = sort === 'expiry' ? live.markets.filter((m) => !known.has(m.marketId)).sort((a, b) => (b.expiryMs ?? 0) - (a.expiryMs ?? 0)) : [];
+    const liveById = new Map(live.markets.map((m) => [m.marketId, m]));
+    const merged = [...fresh, ...src.rows.map((m) => liveById.get(m.marketId) ?? m)];
+    const rows = status ? merged.filter((m) => m.status === status) : merged;
     return { asOf: src.asOf, all: src.total, total: rows.length, rows: rows.slice(offset, offset + LIMIT) };
-  }, [src, status, offset]);
+  }, [src, status, offset, sort, live.markets]);
   const nav = useRowNav();
   const ex = useExplorer();
 
@@ -30,7 +37,7 @@ export default function Markets() {
       <div className="page-head fade-in">
         <h1>Markets</h1>
         <p>
-          Every expiry market that has seen a trade. Results appear only once a market is past expiry and its settlement
+          Every market that has seen a trade, plus the ones open right now (read live from the chain). Results appear only once a market is past expiry and its settlement
           price is on-chain.
         </p>
         <AsOfBadge asOf={data?.asOf} />

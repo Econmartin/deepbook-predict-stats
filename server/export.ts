@@ -4,6 +4,8 @@
  * the bundled server).
  *
  *   data/meta.json            deployment + as-of info
+ *   data/live-base.json       what the snapshot already counts for unexpired markets,
+ *                             so browsers can add live chain events on top exactly
  *   data/overview.json        board stats, charts, calibration
  *   data/wallets.json         every wallet's stats (leaderboards filter client-side)
  *   data/wallet/<addr>.json   one wallet: stats, PnL curve, positions
@@ -50,6 +52,15 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
     packages: sdkConfig().packages,
     eventModule: `${sdkConfig().packages.predictV1}::order_events`,
     quoteCoin: sdkConfig().quoteCoinType,
+  });
+
+  // Markets still open at export time, with their trader sets, so the browser
+  // can merge live mints (checkpoint > mintCheckpoint) without double counting.
+  put('live-base.json', {
+    asOf,
+    openMarkets: snap.markets
+      .filter((m) => m.expiryMs != null && m.expiryMs > snap.builtAtMs)
+      .map((m) => ({ ...m, owners: [...new Set((snap.byMarket.get(m.marketId) ?? []).map((p) => p.owner))] })),
   });
 
   const byPnl = [...snap.wallets].sort((a, b) => b.realizedPnl - a.realizedPnl);

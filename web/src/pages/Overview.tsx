@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AreaLine, Calibration, CompareRows, StackedBars } from '../components/charts';
 import { PositionsTable } from '../components/tables';
-import { Addr, AsOfBadge, ErrorNote, MarketLink, SideBar, Skeleton, Stat, StatusPill } from '../components/ui';
-import { fmt, Link, pnlClass, useData, type Bucket, type Overview as O } from '../lib';
+import { Addr, AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat } from '../components/ui';
+import { useLive, useNow, type LiveMarket } from '../live';
+import { fmt, Link, pnlClass, useData, useExplorer, type Bucket, type Overview as O } from '../lib';
 
 const SIDE_SERIES = [
   { key: 'up', label: 'Up', color: 'var(--up)', value: (d: Bucket) => d.up },
@@ -13,6 +14,11 @@ const SIDE_SERIES = [
 export default function Overview() {
   const { data, error } = useData<O>('overview.json');
   const [grain, setGrain] = useState<'daily' | 'hourly'>('daily');
+  const live = useLive();
+  const latest = useMemo(() => {
+    const seen = new Set<string>();
+    return [...live.trades, ...(data?.recent ?? [])].filter((p) => !seen.has(p.id) && !!seen.add(p.id)).slice(0, 12);
+  }, [live.trades, data]);
   if (error) return <ErrorNote error={error} />;
 
   const t = data?.totals;
@@ -59,6 +65,8 @@ export default function Overview() {
           </div>
         </div>
       )}
+
+      <LiveNow />
 
       <section>
         <div className="section-head">
@@ -263,42 +271,16 @@ export default function Overview() {
       <section>
         <div className="section-head">
           <h2>Latest trades</h2>
+          {live.trades.length > 0 && (
+            <span className="sub">
+              <span className="live-dot" style={{ display: 'inline-block', width: 7, height: 7, marginRight: 8 }} />
+              {live.trades.length} since the last snapshot
+            </span>
+          )}
           <Link to="/markets">All markets ›</Link>
         </div>
-        <div className="card flush">{data ? <PositionsTable rows={data.recent} showOwner /> : <Skeleton h={300} style={{ margin: 20 }} />}</div>
+        <div className="card flush">{data ? <PositionsTable rows={latest} showOwner /> : <Skeleton h={300} style={{ margin: 20 }} />}</div>
       </section>
-
-      {data && data.liveMarkets.length > 0 && (
-        <section>
-          <div className="section-head">
-            <h2>Live now</h2>
-          </div>
-          <div className="grid g4">
-            {data.liveMarkets.map((m) => (
-              <div className="card pad-sm" key={m.marketId}>
-                <div className="card-title">
-                  <span>{m.underlying} · {m.expiryMs ? fmt.time(m.expiryMs) : '—'}</span>
-                  <StatusPill status={m.status} />
-                </div>
-                <div className="stat">
-                  <div className="value" style={{ fontSize: 26 }}>
-                    {fmt.usd(m.volume)}
-                  </div>
-                  <div className="foot">
-                    {m.traders} traders · expires {fmt.ago(m.expiryMs)}
-                  </div>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <SideBar sides={m.sides} />
-                </div>
-                <div style={{ marginTop: 12, fontSize: 13 }}>
-                  <MarketLink id={m.marketId} label="Details" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {data && (
         <section>
@@ -314,5 +296,97 @@ export default function Overview() {
         </section>
       )}
     </>
+  );
+}
+
+function countdown(ms: number) {
+  if (ms <= 0) return '0:00';
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+function LiveCard({ m, now }: { m: LiveMarket; now: number }) {
+  const ex = useExplorer();
+  const left = (m.expiryMs ?? 0) - now;
+  const closing = left > 0 && left < 60_000;
+  const state = left <= 0 ? 'Settling' : m.mintPaused ? 'Paused' : 'Trading';
+  return (
+    <div className="card pad-sm live-card">
+      <div className="card-title">
+        <span>
+          {m.underlying ?? '—'} · {m.expiryMs ? new Date(m.expiryMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—'}
+        </span>
+        <span className={`pill ${state === 'Trading' ? 'won' : 'open'}`}>
+          {state === 'Trading' && <span className="dot" />}
+          {state}
+        </span>
+      </div>
+      <div className="stat">
+        <div className={`value countdown ${closing ? 'neg' : ''}`}>{countdown(left)}</div>
+        <div className="foot">{m.referencePrice == null ? 'Strike not set yet' : `Strike ${fmt.price(m.referencePrice)}`}</div>
+      </div>
+      {m.board ? (
+        <div style={{ marginTop: 14 }}>
+          <div className="odds">
+            <span className="pos">↑ Up {fmt.cents(m.board.up)}</span>
+            <span className="neg">{fmt.cents(m.board.down)} Down ↓</span>
+          </div>
+          <div className="bar-track" style={{ marginTop: 6 }}>
+            <div style={{ width: `${(m.board.up / (m.board.up + m.board.down)) * 100}%`, background: 'var(--up)' }} />
+            <div style={{ flex: 1, background: 'var(--down)' }} />
+          </div>
+        </div>
+      ) : (
+        <div className="foot faint" style={{ marginTop: 14, fontSize: 13 }}>
+          {left <= 0 ? 'Waiting for the settlement price' : m.referencePrice == null ? 'Odds appear once the strike is set' : 'No live quote right now'}
+        </div>
+      )}
+      <div className="divider" style={{ margin: '14px 0 12px' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, alignItems: 'center' }}>
+        <span className="muted">
+          <b style={{ color: 'var(--text)' }}>{fmt.usd(m.volume)}</b> · {m.traders} {m.traders === 1 ? 'trader' : 'traders'}
+        </span>
+        <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          <Link to={`/market/${m.marketId}`}>Details ›</Link>
+          <Ext href={ex.object(m.marketId)} label={`Open market on ${ex.name}`} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LiveNow() {
+  const live = useLive();
+  const now = useNow(1000);
+  const markets = live.markets.filter((m) => (m.expiryMs ?? 0) > now - 120_000);
+  return (
+    <section>
+      <div className="section-head">
+        <div>
+          <h2>Live now</h2>
+          <div className="sub" style={{ marginTop: 6 }}>
+            Read straight from the chain in your browser. Odds are the protocol’s own quote at each market’s strike.
+          </div>
+        </div>
+      </div>
+      {live.status === 'connecting' && !markets.length ? (
+        <div className="grid g4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} h={230} />
+          ))}
+        </div>
+      ) : markets.length === 0 ? (
+        <div className="card empty">{live.status === 'error' ? 'Couldn’t reach the Sui fullnode.' : 'No markets are open right now.'}</div>
+      ) : (
+        <div className="grid g4">
+          {markets.map((m) => (
+            <LiveCard key={m.marketId} m={m} now={now} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

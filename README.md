@@ -31,6 +31,17 @@ that happens, re-enable the workflow in the Actions tab.
 To set it up on a fork, go to **Settings → Pages → Source: GitHub Actions**,
 then run the *Publish* workflow once.
 
+## Live data
+
+The snapshot is refreshed about every 10 minutes. The live parts of the site
+read the chain directly from the visitor's browser over gRPC-web, since the
+public fullnode allows any origin. That covers open markets with their
+countdowns and the protocol's live up/down quote, and every `OrderMinted` newer
+than the snapshot. The snapshot records the checkpoint its mint stream was
+indexed through (`data/live-base.json`). The browser adds only events after that
+checkpoint, so snapshot plus live never double counts or drops a trade. Results
+(won, lost, PnL) still come only from the indexed settlement.
+
 ## Running locally
 
 ```bash
