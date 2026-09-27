@@ -34,6 +34,16 @@ the export caps keep the site far below Pages' 1 GB limit (see
 To set it up on a fork, go to **Settings → Pages → Source: GitHub Actions**,
 then run the *Publish* workflow once.
 
+**Custom domain.** Set the repo variable `SITE_URL` (for example
+`https://stats.example.com/`) and add the domain under **Settings → Pages**.
+The workflow derives the base path, the share-card links and the
+database-restore URL from `SITE_URL`.
+
+**Share card.** Each export redraws `og.png` (1200×630) from the snapshot,
+showing the current top 3 and totals. It's drawn with Satori and resvg in
+`server/og.ts`. The page's Open Graph and Twitter tags point at it, with a
+per-build cache-buster, so shared links unfurl with current numbers.
+
 ## Live data
 
 The snapshot is refreshed about every 10 minutes. The live parts of the site

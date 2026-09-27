@@ -12,6 +12,7 @@
  *   data/markets/<view>.json  recent / top-volume / top-traders market lists
  *   data/market/<id>.json     one market and its positions
  *   predict.db.gz             the full SQLite database, for anyone to verify
+ *   og.png                    the social share card, redrawn from this snapshot
  *
  * Usage: `npm run export -- <outDir>` (default web/dist).
  */
@@ -22,6 +23,12 @@ import { join } from 'node:path';
 import { GRPC_URL, NETWORK, sdkConfig } from './chain.js';
 import type { Db } from './db.js';
 import { pnlCurve, type Position, type Snapshot } from './stats.js';
+import { renderOgCard } from './og.js';
+
+/** Redraw the social share card from the snapshot. */
+export async function writeOgCard(snap: Snapshot, outDir: string): Promise<void> {
+  writeFileSync(join(outDir, 'og.png'), await renderOgCard(snap));
+}
 
 /** Keep the published site bounded (GitHub Pages caps a site at 1 GB). */
 const MARKET_FILE_DAYS = 30;
@@ -146,6 +153,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   mkdirSync(outDir, { recursive: true });
   const db = openDb();
   const t0 = Date.now();
-  const r = exportStatic(buildSnapshot(db), outDir, db);
+  const snap = buildSnapshot(db);
+  const r = exportStatic(snap, outDir, db);
+  await writeOgCard(snap, outDir);
   console.log(JSON.stringify({ ok: true, outDir, ...r, ms: Date.now() - t0 }));
 }

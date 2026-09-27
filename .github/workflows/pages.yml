@@ -33,6 +33,10 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      # The site's public address. Set the repo variable SITE_URL for a custom
+      # domain (e.g. https://stats.example.com/); defaults to the Pages URL.
+      SITE_URL: ${{ vars.SITE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,12 +47,21 @@ jobs:
 
       - run: npm ci
 
+      - name: Resolve site address
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          url="${SITE_URL:-https://${owner}.github.io/${repo}/}"
+          url="${url%/}/"
+          path="/$(echo "$url" | cut -d/ -f4-)"
+          echo "SITE_URL=$url" >> "$GITHUB_ENV"
+          echo "BASE_PATH=${path%/}/" >> "$GITHUB_ENV"
+          echo "site $url (base ${path%/}/)"
+
       - name: Restore previous database from the live site
         run: |
           mkdir -p data
-          owner="${GITHUB_REPOSITORY_OWNER,,}"
-          repo="${GITHUB_REPOSITORY#*/}"
-          url="https://${owner}.github.io/${repo}/predict.db.gz"
+          url="${SITE_URL}predict.db.gz"
           if curl -fsSL "$url" -o data/predict.db.gz; then
             gunzip -f data/predict.db.gz && echo "restored $(du -h data/predict.db | cut -f1) from $url"
           else
@@ -66,8 +79,7 @@ jobs:
 
       - name: Build site
         run: |
-          repo="${GITHUB_REPOSITORY#*/}"
-          BASE_PATH="/${repo}/" npm run build
+          npm run build
           npm run export -- web/dist
           cp web/dist/index.html web/dist/404.html
           touch web/dist/.nojekyll

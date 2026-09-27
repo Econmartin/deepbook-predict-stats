@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { openDb } from './db.js';
 import { syncOnce } from './indexer.js';
 import { buildSnapshot } from './stats.js';
-import { exportStatic } from './export.js';
+import { exportStatic, writeOgCard } from './export.js';
 
 const db = openDb();
 const exportDir = process.env.EXPORT_DIR || 'data/site';
@@ -30,8 +30,13 @@ let lastDbExport = 0;
 
 function publish() {
   const withDb = Date.now() - lastDbExport > DB_EXPORT_EVERY_MS;
-  exportStatic(buildSnapshot(db), exportDir, withDb ? db : undefined);
-  if (withDb) lastDbExport = Date.now();
+  const snap = buildSnapshot(db);
+  exportStatic(snap, exportDir, withDb ? db : undefined);
+  if (withDb) {
+    lastDbExport = Date.now();
+    // The share card changes slowly and takes a moment to draw.
+    writeOgCard(snap, exportDir).catch((e) => console.error('[og] failed', e));
+  }
 }
 
 async function loop(intervalMs: number) {
@@ -59,6 +64,7 @@ app.use('/data/*', async (c, next) => {
 });
 app.use('/data/*', serveStatic({ root: exportDir }));
 app.use('/predict.db.gz', serveStatic({ root: exportDir }));
+app.use('/og.png', serveStatic({ root: exportDir }));
 app.get('/health', (c) => c.json({ ok: true }));
 
 const dist = 'web/dist';
