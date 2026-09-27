@@ -193,3 +193,52 @@ export function Leaders({ winners, skill }: { winners: Leader[] | undefined; ski
     </section>
   );
 }
+
+type DayLeader = { owner: string; pnl: number; resolved: number; wins: number; roi: number | null };
+
+/** Compact "best of the last 24 hours" panel: three cards, no podium. */
+export function Top24h({ rows }: { rows: DayLeader[] | undefined }) {
+  const live = useLive();
+  const now = useNow(15_000);
+  const active = useMemo(
+    () => new Set(live.trades.filter((t) => now - t.mintedAtMs < TRADING_NOW_MS).map((t) => t.owner)),
+    [live.trades, now],
+  );
+  return (
+    <section className="day-panel">
+      <div className="section-head">
+        <div>
+          <h2>Best of the last 24 hours</h2>
+          <div className="sub" style={{ marginTop: 6 }}>
+            Profit realized since yesterday — positions settled or sold in the last 24 hours, after fees.
+          </div>
+        </div>
+      </div>
+      {!rows ? (
+        <Skeleton h={150} />
+      ) : rows.length === 0 ? (
+        <div className="card empty">No profitable results in the last 24 hours yet.</div>
+      ) : (
+        <div className="grid g3">
+          {rows.map((d, i) => (
+            <Link key={d.owner} to={`/wallet/${d.owner}`} className="card pad-sm day-card">
+              <div className="day-top">
+                <span className="day-rank">#{i + 1}</span>
+                {active.has(d.owner) && <TradingNow />}
+              </div>
+              <div className="day-id">
+                <Avatar address={d.owner} size={36} />
+                <span className="mono">{fmt.short(d.owner)}</span>
+              </div>
+              <div className="day-value num pos">{fmt.signed(d.pnl)}</div>
+              <div className="day-sub">
+                {d.resolved} {d.resolved === 1 ? 'result' : 'results'} · {d.wins} won · ROI{' '}
+                <b className={pnlClass(d.roi)}>{fmt.pct(d.roi, 0)}</b>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

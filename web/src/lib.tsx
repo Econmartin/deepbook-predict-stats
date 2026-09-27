@@ -143,6 +143,8 @@ export interface Overview {
   calibrationByTime: CalBucket[];
   topWinners: Array<WalletStats & { spark: number[] }>;
   topSkill: Array<WalletStats & { spark: number[] }>;
+  /** Top 3 by PnL realized in the 24h before the snapshot. */
+  top24h: Array<{ owner: string; pnl: number; resolved: number; wins: number; spent: number; roi: number | null }>;
   recent: Position[];
   liveMarkets: MarketStats[];
 }

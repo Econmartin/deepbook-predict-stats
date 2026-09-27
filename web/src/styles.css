@@ -1191,3 +1191,48 @@ footer {
     display: none;
   }
 }
+
+/* ── best of the last 24h ────────────────────────────── */
+
+.day-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.day-card:hover {
+  text-decoration: none;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+.day-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 22px;
+}
+.day-rank {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+.day-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.day-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-top: 6px;
+}
+.day-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.day-sub b {
+  font-weight: 600;
+}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AreaLine, Calibration, CompareRows, StackedBars } from '../components/charts';
 import { PositionsTable } from '../components/tables';
-import { Leaders } from '../components/leaders';
+import { Leaders, Top24h } from '../components/leaders';
 import { AsOfBadge, ErrorNote, Ext, SideBar, Skeleton, Stat } from '../components/ui';
 import { useLive, useNow, type LiveMarket } from '../live';
 import { fmt, Link, pnlClass, useData, useExplorer, type Bucket, type Overview as O } from '../lib';
@@ -44,6 +44,8 @@ export default function Overview() {
       </div>
 
       <Leaders winners={data?.topWinners} skill={data?.topSkill} />
+
+      <Top24h rows={data?.top24h} />
 
       {!data ? (
         <Skeleton h={128} style={{ marginTop: 56 }} />

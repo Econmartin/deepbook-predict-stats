@@ -78,10 +78,29 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
       .map((m) => ({ ...m, owners: [...new Set((snap.byMarket.get(m.marketId) ?? []).map((p) => p.owner))] })),
   });
 
+  // Best of the last 24h: PnL realized (settled or sold) inside the window.
+  const since = snap.builtAtMs - 86400_000;
+  const day = new Map<string, { owner: string; pnl: number; resolved: number; wins: number; spent: number }>();
+  for (const p of snap.positions) {
+    if (p.pnl == null || p.resolvedAtMs == null || p.resolvedAtMs < since) continue;
+    const d = day.get(p.owner) ?? { owner: p.owner, pnl: 0, resolved: 0, wins: 0, spent: 0 };
+    day.set(p.owner, d);
+    d.pnl += p.pnl;
+    d.resolved++;
+    d.spent += p.cost;
+    if (p.status === 'won' || (p.status === 'exited' && p.pnl > 0)) d.wins++;
+  }
+  const top24h = [...day.values()]
+    .filter((d) => d.pnl > 0)
+    .sort((a, b) => b.pnl - a.pnl)
+    .slice(0, 3)
+    .map((d) => ({ ...d, roi: d.spent > 0 ? d.pnl / d.spent : null }));
+
   const byPnl = [...snap.wallets].sort((a, b) => b.realizedPnl - a.realizedPnl);
   put('overview.json', {
     asOf,
     ...snap.overview,
+    top24h,
     topWinners: byPnl.slice(0, 10).map((w) => ({ ...w, spark: spark(pnlCurve(snap.byOwner.get(w.owner) ?? [])) })),
     // Skill board: held-to-expiry z-score, with a minimum sample so one lucky ticket can't top it.
     topSkill: snap.wallets
