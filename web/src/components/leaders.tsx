@@ -210,7 +210,7 @@ export function Top24h({ rows }: { rows: DayLeader[] | undefined }) {
         <div>
           <h2>Best of the last 24 hours</h2>
           <div className="sub" style={{ marginTop: 6 }}>
-            Profit realized since yesterday — positions settled or sold in the last 24 hours, after fees.
+            Rolling 24 hours: profit realized (positions settled or sold) in the last 24 hours, after fees.
           </div>
         </div>
       </div>
