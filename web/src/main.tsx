@@ -8,6 +8,7 @@ import Markets from './pages/Markets';
 import Market from './pages/Market';
 import Wallet from './pages/Wallet';
 import About from './pages/About';
+import { InspectHome, InspectTx } from './pages/Inspect';
 import { LiveProvider } from './live';
 
 function Search() {
@@ -59,6 +60,7 @@ function Nav() {
           <Link to="/" className={is('/')}>Overview</Link>
           <Link to="/leaderboard" className={is('/leaderboard')}>Leaderboard</Link>
           <Link to="/markets" className={is('/market')}>Markets</Link>
+          <Link to="/inspect" className={is('/inspect') || is('/tx')}>Inspect</Link>
           <Link to="/about" className={is('/about')}>How it works</Link>
         </div>
         <Search />
@@ -98,6 +100,8 @@ function Routes() {
   let m: RegExpMatchArray | null;
   if ((m = p.match(/^\/wallet\/([^/]+)/))) page = <Wallet key={m[1]} address={decodeURIComponent(m[1]!)} />;
   else if ((m = p.match(/^\/market\/([^/]+)/))) page = <Market key={m[1]} id={decodeURIComponent(m[1]!)} />;
+  else if ((m = p.match(/^\/tx\/([^/]+)/))) page = <InspectTx key={m[1]} digest={decodeURIComponent(m[1]!)} />;
+  else if (p === '/inspect') page = <InspectHome />;
   else if (p === '/leaderboard') page = <Leaderboard />;
   else if (p === '/markets') page = <Markets />;
   else if (p === '/about') page = <About />;

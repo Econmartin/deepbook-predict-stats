@@ -55,6 +55,25 @@ indexed through (`data/live-base.json`). The browser adds only events after that
 checkpoint, so snapshot plus live never double counts or drops a trade. Results
 (won, lost, PnL) still come only from the indexed settlement.
 
+## Trade inspector
+
+`/inspect` and `/tx/<digest>` break any Predict transaction down from the chain,
+in the browser:
+
+- **Buys:** the fair price (premium), the trading fee split into base fee and
+  late-entry surcharge, the incentive subsidy, the congestion surcharge, price
+  impact, the builder fee, the referral share, gas, the all-in price per
+  contract, the break-even win rate, oracle freshness and the settled outcome.
+- **Early sales:** the sale value, fees, the price-impact refund and the net
+  amount received.
+- **Claims:** the settlement payout.
+
+The fee split recomputes the trade's fee with the market's own fee policy
+(`strike_exposure.config`) using the SDK's exact fee math. It's only shown when
+the recomputed fee matches the on-chain fee to the base unit. The chain records
+the price a trade got, not the price the trader saw, so slippage against an
+expected price is an optional input.
+
 ## Running locally
 
 ```bash

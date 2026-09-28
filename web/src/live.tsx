@@ -15,7 +15,7 @@ import { useData, type AsOf, type MarketStats, type Position, type Side } from '
 const GRPC = 'https://fullnode.mainnet.sui.io:443';
 const POS_INF = (1n << 30n) - 1n;
 const EVENTS_EVERY_MS = 5_000;
-const MARKETS_EVERY_MS = 10_000;
+const MARKETS_EVERY_MS = 15_000;
 
 type Sdk = Awaited<ReturnType<typeof loadSdk>>;
 async function loadSdk() {
@@ -28,7 +28,7 @@ async function loadSdk() {
   return { sui, predict, cfg: predict.cfg };
 }
 let sdkPromise: Promise<Sdk> | null = null;
-const sdk = () => (sdkPromise ??= loadSdk());
+export const sdk = () => (sdkPromise ??= loadSdk());
 
 interface MarketInfo {
   expiryMs: number;
@@ -147,38 +147,45 @@ function toPosition(m: RawMint, info: MarketInfo | null): Position {
   };
 }
 
-/** Newest-first mints with checkpoint > `after`. Pages back until it reaches the snapshot. */
-async function mintsAfter(s: Sdk, after: number): Promise<RawMint[]> {
+type EventPage = {
+  events?: Array<{ transactionDigest: string; eventIndex: number; checkpoint: string; sender: string; json?: Json }>;
+  hasNextPage?: boolean;
+  endCursor?: string;
+};
+
+/**
+ * One newest-first page of mints (from the head, or older than `cursor`).
+ * Stops early at a mint we already hold or at the snapshot checkpoint.
+ */
+async function mintPage(
+  s: Sdk,
+  cursor: string | null,
+  after: number,
+  known: Map<string, RawMint>,
+): Promise<{ mints: RawMint[]; next: string | null; reached: boolean }> {
   const type = `${s.cfg.packages.predictV1}::order_events::OrderMinted`;
-  const out: RawMint[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < 20; page++) {
-    const r = (await s.sui.listEvents({
-      filter: { eventType: type },
-      limit: 50,
-      ...(cursor ? { before: cursor } : { order: 'descending' }),
-    } as never)) as unknown as {
-      events?: Array<{ transactionDigest: string; eventIndex: number; checkpoint: string; sender: string; json?: Json }>;
-      hasNextPage?: boolean;
-      endCursor?: string;
-    };
-    let reached = false;
-    for (const e of r.events ?? []) {
-      const cp = Number(e.checkpoint);
-      if (cp <= after) {
-        reached = true;
-        break;
-      }
-      const j = e.json ?? {};
-      // Only original mints open a position (partial-close replacements share the root).
-      if (String(j.position_root_id) !== String(j.order_id)) continue;
-      out.push({ id: `${e.transactionDigest}:${e.eventIndex}`, checkpoint: cp, digest: e.transactionDigest, sender: e.sender, j });
-    }
-    if (reached || !r.hasNextPage || !r.endCursor) break;
-    cursor = r.endCursor;
+  const r = (await s.sui.listEvents({
+    filter: { eventType: type },
+    limit: 50,
+    ...(cursor ? { before: cursor } : { order: 'descending' }),
+  } as never)) as unknown as EventPage;
+  const mints: RawMint[] = [];
+  for (const e of r.events ?? []) {
+    const cp = Number(e.checkpoint);
+    const id = `${e.transactionDigest}:${e.eventIndex}`;
+    if (cp <= after || known.has(id)) return { mints, next: null, reached: true };
+    const j = e.json ?? {};
+    // Only original mints open a position (partial-close replacements share the root).
+    if (String(j.position_root_id) !== String(j.order_id)) continue;
+    mints.push({ id, checkpoint: cp, digest: e.transactionDigest, sender: e.sender, j });
   }
-  return out;
+  return { mints, next: r.hasNextPage && r.endCursor ? r.endCursor : null, reached: !r.hasNextPage };
 }
+
+/** Head pages per poll, and older pages per poll while catching up to the snapshot. */
+const HEAD_PAGES = 2;
+const CATCHUP_PAGES_PER_POLL = 1;
+const CATCHUP_MAX_PAGES = 40;
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const { data: base } = useData<LiveBase>('live-base.json', 60_000);
@@ -186,38 +193,75 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [updatedMs, setUpdatedMs] = useState<number | null>(null);
   const [raw, setRaw] = useState<RawMint[]>([]);
   const [infos, setInfos] = useState<Map<string, MarketInfo | null>>(new Map());
+  const infosRef = useRef(infos);
+  infosRef.current = infos;
   const [active, setActive] = useState<
     Array<{ id: string; underlying: string | null; expiryMs: number; referencePrice: number | null; mintPaused: boolean; board: LiveMarket['board'] }>
   >([]);
   const after = base?.asOf.mintCheckpoint ?? null;
-  const afterRef = useRef(after);
-  afterRef.current = after;
 
-  // Trades: poll new mints since the snapshot.
+  // Trades: incremental. Each poll reads only mints newer than the newest we
+  // hold; if the snapshot is far behind, older history is caught up a page per
+  // poll (capped), so a stale snapshot can never turn into a request flood.
+  const knownRef = useRef(new Map<string, RawMint>());
+  const catchupRef = useRef<{ cursor: string | null; pages: number; done: boolean }>({ cursor: null, pages: 0, done: false });
   useEffect(() => {
     if (after == null) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
+    // A newer snapshot already counts everything up to its checkpoint.
+    for (const [id, m] of knownRef.current) if (m.checkpoint <= after) knownRef.current.delete(id);
     const tick = async () => {
       try {
         const s = await sdk();
-        const mints = await mintsAfter(s, afterRef.current ?? after);
+        const known = knownRef.current;
+        const fresh: RawMint[] = [];
+        // Head: newest first, until we meet what we hold (or the snapshot).
+        let cursor: string | null = null;
+        let reached = false;
+        for (let i = 0; i < HEAD_PAGES && !reached; i++) {
+          const pg = await mintPage(s, cursor, after, known);
+          fresh.push(...pg.mints);
+          reached = pg.reached;
+          cursor = pg.next;
+          if (!cursor) break;
+        }
+        const firstPoll = known.size === 0 && !catchupRef.current.done && catchupRef.current.pages === 0;
+        if (firstPoll) catchupRef.current = { cursor: reached ? null : cursor, pages: 0, done: reached || !cursor };
+        for (const m of fresh) known.set(m.id, m);
+        // Catch-up: older than anything we hold, a little at a time.
+        const cu = catchupRef.current;
+        for (let i = 0; i < CATCHUP_PAGES_PER_POLL && !cu.done && cu.cursor; i++) {
+          const pg = await mintPage(s, cu.cursor, after, known);
+          for (const m of pg.mints) known.set(m.id, m);
+          cu.pages++;
+          cu.cursor = pg.next;
+          if (pg.reached || !pg.next || cu.pages >= CATCHUP_MAX_PAGES) cu.done = true;
+        }
         if (!alive) return;
-        const ids = [...new Set(mints.map((m) => lower(m.j.expiry_market_id)))];
+        const all = [...known.values()].sort((x, y) => y.checkpoint - x.checkpoint || y.id.localeCompare(x.id));
+        const ids = [...new Set(all.map((m) => lower(m.j.expiry_market_id)))].filter((id) => !infosRef.current.has(id));
         const resolved = await Promise.all(ids.map(async (id) => [id, await marketInfo(s, id)] as const));
         if (!alive) return;
-        setInfos((prev) => {
-          const next = new Map(prev);
-          for (const [id, i] of resolved) next.set(id, i);
-          return next;
-        });
-        setRaw(mints);
+        if (resolved.length) {
+          setInfos((prev) => {
+            const next = new Map(prev);
+            for (const [id, i] of resolved) next.set(id, i);
+            return next;
+          });
+        }
+        setRaw(all);
         setStatus('live');
         setUpdatedMs(Date.now());
+        failures = 0;
       } catch {
+        failures++;
         if (alive) setStatus('error');
       }
-      if (alive) timer = setTimeout(tick, document.hidden ? EVENTS_EVERY_MS * 6 : EVENTS_EVERY_MS);
+      // Back off after errors (e.g. rate limits): 5s, 10s, 20s … up to 2 min.
+      const base = document.hidden ? EVENTS_EVERY_MS * 6 : EVENTS_EVERY_MS;
+      if (alive) timer = setTimeout(tick, Math.min(120_000, base * 2 ** failures));
     };
     void tick();
     return () => {
@@ -230,6 +274,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
     const tick = async () => {
       try {
         const s = await sdk();
@@ -260,10 +305,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           setStatus('live');
           setUpdatedMs(Date.now());
         }
+        failures = 0;
       } catch {
+        failures++;
         if (alive) setStatus((s) => (s === 'live' ? s : 'error'));
       }
-      if (alive) timer = setTimeout(tick, document.hidden ? MARKETS_EVERY_MS * 6 : MARKETS_EVERY_MS);
+      const base = document.hidden ? MARKETS_EVERY_MS * 6 : MARKETS_EVERY_MS;
+      if (alive) timer = setTimeout(tick, Math.min(120_000, base * 2 ** failures));
     };
     void tick();
     return () => {

@@ -44,12 +44,16 @@ export function Addr({ address, link = true, full = false }: { address: string; 
   );
 }
 
+/** A transaction: opens our breakdown; the small icon goes to the explorer. */
 export function TxLink({ digest, children }: { digest: string; children?: ReactNode }) {
   const ex = useExplorer();
   return (
-    <a className="mono" href={ex.tx(digest)} target="_blank" rel="noreferrer noopener" title={`View transaction on ${ex.name}`} onClick={(e) => e.stopPropagation()}>
-      {children ?? `${digest.slice(0, 6)}…`}
-    </a>
+    <span className="addr" onClick={(e) => e.stopPropagation()}>
+      <Link to={`/tx/${digest}`}>
+        <span className="mono" title="Inspect this trade">{children ?? `${digest.slice(0, 6)}…`}</span>
+      </Link>
+      <Ext href={ex.tx(digest)} label={`View transaction on ${ex.name}`} />
+    </span>
   );
 }
 

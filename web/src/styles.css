@@ -1236,3 +1236,182 @@ footer {
 .day-sub b {
   font-weight: 600;
 }
+
+/* ── trade inspector ─────────────────────────────────── */
+
+.inspect-search {
+  display: flex;
+  gap: 10px;
+  max-width: 760px;
+}
+.inspect-search input {
+  flex: 1;
+  min-width: 0;
+  height: 48px;
+  border-radius: 14px;
+  border: none;
+  background: var(--fill);
+  color: var(--text);
+  padding: 0 18px;
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+  transition: box-shadow 0.2s var(--ease), background 0.2s var(--ease);
+}
+.inspect-search input:focus {
+  background: var(--bg-elev);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.inspect-search .btn {
+  height: 48px;
+  padding: 0 26px;
+}
+.tx-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  font-size: 14px;
+  color: var(--text-2);
+  align-items: center;
+}
+.inspect-card {
+  margin-bottom: 22px;
+}
+.inspect-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.inspect-owner {
+  font-size: 14px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.inspect-hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin: 26px 0 22px;
+}
+.inspect-big {
+  font-size: clamp(40px, 6vw, 60px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.inspect-vs {
+  color: var(--text-3);
+  font-weight: 600;
+  padding-bottom: 26px;
+}
+.inspect-callout {
+  flex: 1 1 260px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-2);
+  background: var(--fill-2);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.inspect-callout b {
+  color: var(--text);
+}
+.stack-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--fill-2);
+}
+.stack-bar > div {
+  min-width: 3px;
+  transition: width 0.8s var(--ease);
+}
+.inspect-table {
+  margin-top: 18px;
+}
+.inspect-table td {
+  white-space: normal;
+  padding: 12px 10px;
+}
+.inspect-table td:first-child {
+  padding-left: 0;
+}
+.inspect-table td:last-child {
+  padding-right: 0;
+}
+.inspect-note {
+  font-size: 12px;
+  margin: 2px 0 0 19px;
+}
+.inspect-total td {
+  font-weight: 700;
+  font-size: 16px;
+  border-top: 1.5px solid var(--line-strong);
+}
+.fee-check {
+  font-size: 13px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--fill-2);
+  color: var(--text-2);
+}
+.fee-check.exact {
+  color: var(--pos);
+  background: color-mix(in srgb, var(--pos) 10%, transparent);
+}
+.inspect-stats {
+  margin-top: 22px;
+}
+.slippage {
+  display: flex;
+  align-items: center;
+  gap: 14px 20px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.slippage label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.slippage input {
+  width: 72px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: var(--fill);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+  text-align: right;
+  outline: none;
+}
+.inspect-result {
+  margin-top: 18px;
+  font-size: 15px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--fill-2);
+}
+@media (max-width: 640px) {
+  .inspect-search {
+    flex-direction: column;
+  }
+  .inspect-vs {
+    display: none;
+  }
+}
