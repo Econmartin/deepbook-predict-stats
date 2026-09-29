@@ -91,7 +91,18 @@ export default function Wallet({ address }: { address: string }) {
               <Stat
                 label="Net PnL"
                 value={<span className={pnlClass(s.realizedPnl)}>{fmt.signed(s.realizedPnl)}</span>}
-                foot={<>ROI {fmt.pct(s.roi)} on {fmt.usd(s.resolvedSpent)} resolved</>}
+                foot={
+                  s.funding?.returnOnDeposits != null ? (
+                    <>
+                      <b className={pnlClass(s.funding.returnOnDeposits)}>{fmt.pct(s.funding.returnOnDeposits, 0)}</b> on{' '}
+                      {fmt.usd(s.funding.deposited)} deposited · {fmt.pct(s.roi)} per $ traded
+                    </>
+                  ) : (
+                    <>
+                      {fmt.pct(s.roi)} per $ traded, on {fmt.usd(s.resolvedSpent)} of resolved trades
+                    </>
+                  )
+                }
               />
             </div>
             <div>
@@ -147,6 +158,39 @@ export default function Wallet({ address }: { address: string }) {
                   <dt>Last trade</dt>
                   <dd>{fmt.ago(s.lastMs)}</dd>
                 </dl>
+                {s.funding && (
+                  <>
+                    <div className="divider" />
+                    <div className="card-title">Account</div>
+                    <dl className="kv">
+                      <dt>Deposited</dt>
+                      <dd>{fmt.usd(s.funding.deposited)}</dd>
+                      <dt>Withdrawn</dt>
+                      <dd>{fmt.usd(s.funding.withdrawn)}</dd>
+                      <dt>Balance now</dt>
+                      <dd>{s.funding.balance == null ? '—' : fmt.usd(s.funding.balance)}</dd>
+                      {s.funding.unclaimed > 0 && (
+                        <>
+                          <dt>Unclaimed winnings</dt>
+                          <dd className="pos">{fmt.usd(s.funding.unclaimed)}</dd>
+                        </>
+                      )}
+                      {s.funding.appFees > 0 && (
+                        <>
+                          <dt className="faint">Fees to trading apps</dt>
+                          <dd className="faint">{fmt.usd(s.funding.appFees)}</dd>
+                        </>
+                      )}
+                      <dt>Return on deposits</dt>
+                      <dd className={pnlClass(s.funding.returnOnDeposits)}>{fmt.pct(s.funding.returnOnDeposits, 0)}</dd>
+                    </dl>
+                    <div className="card-sub" style={{ marginTop: 10, fontSize: 12 }}>
+                      {s.funding.reconciled
+                        ? '✓ Deposits − withdrawals + profit − open trades − unclaimed = the on-chain balance, to the cent.'
+                        : 'This account also moves money outside Predict trading, so its balance doesn’t reconcile from trades alone.'}
+                    </div>
+                  </>
+                )}
                 <div className="divider" />
                 <div className="card-title">Side mix</div>
                 <SideBar sides={s.sides} />

@@ -66,7 +66,19 @@ export interface WalletStats {
   sides: Record<Side, number>;
   firstMs: number;
   lastMs: number;
+  funding: {
+    deposited: number;
+    withdrawn: number;
+    appFees: number;
+    balance: number | null;
+    unclaimed: number;
+    returnOnDeposits: number | null;
+    reconciled: boolean;
+  } | null;
 }
+
+/** Return on money actually deposited, else null. */
+export const onDeposits = (w: Pick<WalletStats, 'funding'>) => w.funding?.returnOnDeposits ?? null;
 
 export interface MarketStats {
   marketId: string;

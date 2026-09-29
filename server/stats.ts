@@ -179,7 +179,87 @@ export function loadPositions(db: Db, nowMs: number): Position[] {
   });
 }
 
+// ── funding (deposits, withdrawals, balance) ─────────────────────────────────
+
+export interface Funding {
+  /** Real USDC deposits into the Predict account (not trade proceeds), plus
+   *  FundsSettled credits from outside trading (e.g. LP withdrawals). */
+  deposited: number;
+  /** Real USDC withdrawals out of the account (not trade costs). */
+  withdrawn: number;
+  /** Small extra debits inside trade transactions (fees charged by the trading app). */
+  appFees: number;
+  /** Latest on-chain USDC balance of the account. */
+  balance: number | null;
+}
+
+/**
+ * Split each account's USDC flows into trade flows and real deposits and
+ * withdrawals. Per (transaction, owner): a buy's Withdrawn equals its all-in
+ * cost and a sale/claim's Deposited equals its proceeds/payout, exactly, so
+ * whatever is left over is external money — or, when the transaction also
+ * trades, a fee charged by the app that built it.
+ */
+export function loadFunding(db: Db): Map<string, Funding> {
+  const rows = db
+    .prepare(
+      `WITH debit AS (
+         SELECT digest, owner, SUM(cost) v FROM mints WHERE root_id = order_id GROUP BY digest, owner
+       ), credit AS (
+         SELECT digest, owner, SUM(v) v FROM (
+           SELECT digest, owner, proceeds v FROM exits UNION ALL SELECT digest, owner, payout v FROM claims
+         ) GROUP BY digest, owner
+       ), f AS (
+         SELECT fl.digest, a.owner,
+                SUM(CASE WHEN fl.kind = 'deposit' THEN fl.amount ELSE 0 END) dep,
+                SUM(CASE WHEN fl.kind = 'settle' THEN fl.amount ELSE 0 END) settle,
+                SUM(CASE WHEN fl.kind = 'withdraw' THEN fl.amount ELSE 0 END) wd
+         FROM account_flows fl JOIN accounts a ON a.account_id = fl.account_id
+         GROUP BY fl.digest, a.owner
+       )
+       SELECT f.owner,
+              SUM(MAX(0, f.dep - COALESCE(c.v, 0)) + f.settle) AS deposited,
+              SUM(CASE WHEN d.v IS NULL THEN f.wd ELSE 0 END) AS withdrawn,
+              SUM(CASE WHEN d.v IS NOT NULL THEN MAX(0, f.wd - d.v) ELSE 0 END) AS app_fees
+       FROM f
+       LEFT JOIN credit c ON c.digest = f.digest AND c.owner = f.owner
+       LEFT JOIN debit d ON d.digest = f.digest AND d.owner = f.owner
+       GROUP BY f.owner`,
+    )
+    .all() as Array<{ owner: string; deposited: number; withdrawn: number; app_fees: number }>;
+  const balances = db
+    .prepare(
+      `SELECT owner, new_balance FROM (
+         SELECT a.owner, fl.new_balance,
+                ROW_NUMBER() OVER (PARTITION BY fl.account_id ORDER BY fl.checkpoint DESC, fl.event_index DESC) rn
+         FROM account_flows fl JOIN accounts a ON a.account_id = fl.account_id
+       ) WHERE rn = 1`,
+    )
+    .all() as Array<{ owner: string; new_balance: number }>;
+  const out = new Map<string, Funding>();
+  for (const r of rows) {
+    out.set(r.owner, { deposited: r.deposited / USDC, withdrawn: r.withdrawn / USDC, appFees: r.app_fees / USDC, balance: null });
+  }
+  for (const b of balances) {
+    const f = out.get(b.owner) ?? { deposited: 0, withdrawn: 0, appFees: 0, balance: null };
+    f.balance = b.new_balance / USDC;
+    out.set(b.owner, f);
+  }
+  return out;
+}
+
 // ── wallets ──────────────────────────────────────────────────────────────────
+
+function fundingStats(f: Funding, ps: Position[], pnl: number, openCost: number): NonNullable<WalletStats['funding']> {
+  const unclaimed = ps.reduce((a, p) => a + (p.status === 'won' && p.claimed == null ? (p.settledValue ?? 0) : 0), 0);
+  const expected = f.deposited - f.withdrawn + pnl - openCost - f.appFees - unclaimed;
+  return {
+    ...f,
+    unclaimed,
+    returnOnDeposits: f.deposited > 0 ? (pnl - f.appFees) / f.deposited : null,
+    reconciled: f.balance != null && Math.abs(f.balance - expected) < 0.01,
+  };
+}
 
 export interface WalletStats {
   owner: string;
@@ -200,9 +280,20 @@ export interface WalletStats {
   sides: { up: number; down: number; range: number };
   firstMs: number;
   lastMs: number;
+  /** Money in and out of the Predict account, and the return on it. */
+  funding:
+    | (Funding & {
+        /** Settled winnings not yet claimed into the account. */
+        unclaimed: number;
+        /** (realized profit − app fees) ÷ deposited. */
+        returnOnDeposits: number | null;
+        /** deposited − withdrawn + profit − open cost − app fees − unclaimed = balance, to the cent. */
+        reconciled: boolean;
+      })
+    | null;
 }
 
-export function walletStats(owner: string, ps: Position[]): WalletStats {
+export function walletStats(owner: string, ps: Position[], funding?: Funding): WalletStats {
   let volume = 0, notional = 0, fees = 0, pnl = 0, spent = 0, open = 0, openCost = 0;
   let exited = 0, probSum = 0, ttmSum = 0, ttmN = 0;
   let hn = 0, hw = 0, he = 0, hv = 0;
@@ -258,6 +349,10 @@ export function walletStats(owner: string, ps: Position[]): WalletStats {
     sides,
     firstMs: n ? ps[0]!.mintedAtMs : 0,
     lastMs: n ? ps[n - 1]!.mintedAtMs : 0,
+    // Return on deposits: realized PnL ÷ money actually put in. Unlike ROI
+    // (PnL ÷ total spent on trades), it doesn't shrink as the same dollars
+    // are traded over and over.
+    funding: funding ? fundingStats(funding, ps, pnl, openCost) : null,
   };
 }
 
@@ -501,7 +596,8 @@ export function buildSnapshot(db: Db, nowMs = Date.now()): Snapshot {
     (byOwner.get(p.owner) ?? byOwner.set(p.owner, []).get(p.owner)!).push(p);
     (byMarket.get(p.marketId) ?? byMarket.set(p.marketId, []).get(p.marketId)!).push(p);
   }
-  const wallets = [...byOwner].map(([o, ps]) => walletStats(o, ps));
+  const funding = loadFunding(db);
+  const wallets = [...byOwner].map(([o, ps]) => walletStats(o, ps, funding.get(o)));
   const markets = [...byMarket]
     .map(([m, ps]) => marketStats(m, ps, nowMs))
     .sort((a, b) => (b.expiryMs ?? 0) - (a.expiryMs ?? 0));

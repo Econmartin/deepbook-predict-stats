@@ -13,7 +13,7 @@
  */
 
 import { normalizeSuiAddress } from '@mysten/sui/utils';
-import { eventPage, readMarket, type ChainEvent, type EventName } from './chain.js';
+import { eventPage, readMarket, sdkConfig, type ChainEvent, type EventName } from './chain.js';
 import { getMeta, setMeta, tx, type Db } from './db.js';
 
 export const POS_INF_TICK = (1n << 30n) - 1n;
@@ -144,10 +144,48 @@ function insertClaims(db: Db, events: ChainEvent[]): number {
   return n;
 }
 
+function insertAccounts(db: Db, events: ChainEvent[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO accounts (account_id, owner) VALUES (?, ?)`);
+  let n = 0;
+  for (const e of events) n += Number(stmt.run(addr(e.json.account_id), addr(e.json.owner)).changes);
+  return n;
+}
+
+/** USDC flows only: accounts also hold other coins (SUI, USDsui) we don't trade in. */
+function flowInserter(kind: 'deposit' | 'withdraw' | 'settle') {
+  return (db: Db, events: ChainEvent[]): number => {
+    const quote = sdkConfig().quoteCoinType.replace(/^0x/, '').toLowerCase();
+    const stmt = db.prepare(`INSERT OR IGNORE INTO account_flows (event_id, digest, checkpoint, event_index,
+        account_id, kind, amount, new_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    let n = 0;
+    for (const e of events) {
+      const coin = String(e.json.coin_type ?? '').replace(/^0x/, '').toLowerCase();
+      if (coin !== quote) continue;
+      n += Number(
+        stmt.run(
+          eventId(e),
+          e.digest,
+          e.checkpoint,
+          e.eventIndex,
+          addr(e.json.account_id),
+          kind,
+          Number(big(e.json.amount)),
+          Number(big(e.json.new_balance)),
+        ).changes,
+      );
+    }
+    return n;
+  };
+}
+
 const INSERTERS: Record<EventName, (db: Db, e: ChainEvent[]) => number> = {
   OrderMinted: insertMints,
   LiveOrderRedeemed: insertExits,
   SettledOrderRedeemed: insertClaims,
+  AccountCreated: insertAccounts,
+  Deposited: flowInserter('deposit'),
+  Withdrawn: flowInserter('withdraw'),
+  FundsSettled: flowInserter('settle'),
 };
 
 async function syncStream(db: Db, name: EventName, maxPages: number): Promise<number> {
@@ -163,7 +201,8 @@ async function syncStream(db: Db, name: EventName, maxPages: number): Promise<nu
         const prev = Number(getMeta(db, 'last_checkpoint') ?? 0);
         if (last.checkpoint > prev) {
           setMeta(db, 'last_checkpoint', String(last.checkpoint));
-          setMeta(db, 'last_event_ms', String(last.json.onchain_timestamp_ms));
+          // Account events carry no timestamp; only order events move the clock.
+          if (last.json.onchain_timestamp_ms) setMeta(db, 'last_event_ms', String(last.json.onchain_timestamp_ms));
         }
       }
       if (r.nextCursor) setMeta(db, key, r.nextCursor);
@@ -237,6 +276,7 @@ export interface SyncResult {
   mints: number;
   exits: number;
   claims: number;
+  flows: number;
   markets: number;
   settled: number;
   ms: number;
@@ -252,10 +292,16 @@ export function syncOnce(db: Db, maxPages = 1000): Promise<SyncResult> {
     const mints = await syncStream(db, 'OrderMinted', maxPages);
     const exits = await syncStream(db, 'LiveOrderRedeemed', maxPages);
     const claims = await syncStream(db, 'SettledOrderRedeemed', maxPages);
+    // Account streams: owners first, so every flow can be attributed.
+    await syncStream(db, 'AccountCreated', maxPages);
+    const flows =
+      (await syncStream(db, 'Deposited', maxPages)) +
+      (await syncStream(db, 'Withdrawn', maxPages)) +
+      (await syncStream(db, 'FundsSettled', maxPages));
     const markets = await discoverMarkets(db);
     const settled = await resolveSettlements(db, Date.now());
     setMeta(db, 'last_sync_ms', String(Date.now()));
-    return { mints, exits, claims, markets, settled, ms: Date.now() - t0 };
+    return { mints, exits, claims, flows, markets, settled, ms: Date.now() - t0 };
   })().finally(() => {
     running = null;
   });

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useRowNav } from '../components/tables';
 import { Addr, AsOfBadge, ErrorNote, SideBar, Skeleton, ZMeter } from '../components/ui';
-import { fmt, pnlClass, useData, type AsOf, type WalletStats } from '../lib';
+import { fmt, onDeposits, pnlClass, useData, type AsOf, type WalletStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -86,7 +86,8 @@ export default function Leaderboard() {
                   <th>#</th>
                   <th>Wallet</th>
                   <th className="r">Net PnL</th>
-                  <th className="r">ROI</th>
+                  <th className="r" title="(Realized profit − app fees) ÷ money deposited into the Predict account">On deposits</th>
+                  <th className="r" title="Realized profit ÷ total spent on resolved trades. Shrinks as the same money is traded over and over.">Per $ traded</th>
                   <th className="r">Trades</th>
                   <th className="r" title="Held-to-expiry wins / implied by price paid">Won vs implied</th>
                   <th>Skill</th>
@@ -107,6 +108,9 @@ export default function Leaderboard() {
                     </td>
                     <td className={`r ${pnlClass(w.realizedPnl)}`} style={{ fontWeight: 600 }}>
                       {fmt.signed(w.realizedPnl)}
+                    </td>
+                    <td className={`r ${pnlClass(onDeposits(w))}`} style={{ fontWeight: 600 }}>
+                      {fmt.pct(onDeposits(w), 0)}
                     </td>
                     <td className={`r ${pnlClass(w.roi)}`}>{fmt.pct(w.roi)}</td>
                     <td className="r">{fmt.int(w.positions)}</td>

@@ -42,14 +42,23 @@ export async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<
   throw last;
 }
 
-export type EventName = 'OrderMinted' | 'LiveOrderRedeemed' | 'SettledOrderRedeemed';
+export type OrderEventName = 'OrderMinted' | 'LiveOrderRedeemed' | 'SettledOrderRedeemed';
+/** Predict's account package: money in and out of each trader's account. */
+export type AccountEventName = 'AccountCreated' | 'Deposited' | 'Withdrawn' | 'FundsSettled';
+export type EventName = OrderEventName | AccountEventName;
+
+const ACCOUNT_EVENTS: readonly string[] = ['AccountCreated', 'Deposited', 'Withdrawn', 'FundsSettled'];
 
 export function eventType(name: EventName): string {
-  return `${sdkConfig().packages.predictV1}::order_events::${name}`;
+  const pk = sdkConfig().packages;
+  return ACCOUNT_EVENTS.includes(name)
+    ? `${pk.account}::account_events::${name}`
+    : `${pk.predictV1}::order_events::${name}`;
 }
 
 export interface ChainEvent {
   digest: string;
+  timestampMs?: number;
   eventIndex: number;
   checkpoint: number;
   sender: string;

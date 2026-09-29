@@ -110,7 +110,9 @@ function leader(w: WalletStats, rank: number): ReactNode {
     h(
       'div',
       { style: { display: 'flex', marginTop: 4, fontSize: 18, color: C.text2, fontWeight: 500 } },
-      `${w.positions} trades · ROI ${w.roi == null ? '—' : `${Math.round(w.roi * 100)}%`}`,
+      w.funding?.returnOnDeposits != null
+        ? `${w.positions} trades · ${Math.round(w.funding.returnOnDeposits * 100)}% on deposits`
+        : `${w.positions} trades · ${w.roi == null ? '—' : `${Math.round(w.roi * 100)}%`} per $ traded`,
     ),
   );
 }

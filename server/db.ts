@@ -81,6 +81,30 @@ CREATE TABLE IF NOT EXISTS markets (
   settled_seen_ms INTEGER
 );
 
+-- Predict accounts (the account package), mapped to their owners.
+CREATE TABLE IF NOT EXISTS accounts (
+  account_id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  created_ts_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_accounts_owner ON accounts(owner);
+
+-- Every USDC movement in or out of an account. kind: deposit | withdraw | settle.
+-- Trade debits/credits are separated from real deposits at read time by
+-- matching them against the trade events in the same transaction.
+CREATE TABLE IF NOT EXISTS account_flows (
+  event_id TEXT PRIMARY KEY,
+  digest TEXT NOT NULL,
+  checkpoint INTEGER NOT NULL,
+  event_index INTEGER NOT NULL,
+  account_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  new_balance INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_flows_account ON account_flows(account_id);
+CREATE INDEX IF NOT EXISTS ix_flows_digest ON account_flows(digest);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

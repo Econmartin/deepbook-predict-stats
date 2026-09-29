@@ -153,6 +153,24 @@ These are what a naive script gets wrong. Each one is covered by a test in
    sells accumulate against the root, and only the unsold remainder pays out at
    settlement.
 
+## Deposits, withdrawals and balances
+
+Predict keeps each trader's money in an on-chain account (the SDK's `account`
+package). The indexer also pages `AccountCreated`, `Deposited`, `Withdrawn`
+and `FundsSettled`, counting USDC only, since accounts also hold other coins.
+Trades move money through the same events: a buy's `Withdrawn` equals its
+all-in cost, and a sale's or claim's `Deposited` equals its proceeds, exactly.
+For each transaction and owner, whatever is left after subtracting the trade
+flows is a real deposit or withdrawal. A leftover debit inside a trade
+transaction is counted as a fee charged by the trading app. `FundsSettled`
+credits (money arriving from outside trading, e.g. LP withdrawals) count as
+deposits.
+
+Every wallet is checked against its on-chain balance:
+`deposited − withdrawn + realized profit − open cost − app fees − unclaimed
+winnings = balance`. It reconciles to the cent for 945 of 946 wallets. The one
+exception moves money outside Predict trading.
+
 ## How to check the numbers
 
 - **Payouts match the chain.** `npm run verify` compares the payout we compute
@@ -169,6 +187,11 @@ These are what a naive script gets wrong. Each one is covered by a test in
 
 - **Net PnL**: realized cash after all fees, over positions that were sold or
   settled. Open positions don't count until they resolve.
+- **On deposits**: `(realized profit − app fees) ÷ money deposited` into the
+  Predict account. This is how much the bankroll grew.
+- **Per $ traded** (formerly ROI): `realized profit ÷ total spent on resolved
+  trades`. This is the edge per dollar traded. It's much smaller than return on
+  deposits, because the same money is traded many times over.
 - **Won vs implied**: for positions held to expiry, the realized win rate
   compared with the average price paid, which is the implied probability.
 - **Skill (σ)**: `(wins − Σp) / √Σp(1−p)` over held-to-expiry positions. Around

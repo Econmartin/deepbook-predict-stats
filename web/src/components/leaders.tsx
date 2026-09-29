@@ -4,7 +4,7 @@
  * minutes (read live from the chain) get a "Trading now" pulse.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { fmt, Link, pnlClass, type WalletStats } from '../lib';
+import { fmt, Link, onDeposits, pnlClass, type WalletStats } from '../lib';
 import { useLive, useNow } from '../live';
 import { Avatar, Skeleton, ZMeter } from './ui';
 import { useRowNav } from './tables';
@@ -79,7 +79,16 @@ function headline(w: Leader, board: Board) {
 function subline(w: Leader, board: Board) {
   return board === 'pnl' ? (
     <>
-      ROI <b className={pnlClass(w.roi)}>{fmt.pct(w.roi, 0)}</b> · {fmt.int(w.positions)} trades
+      {onDeposits(w) != null ? (
+        <>
+          <b className={pnlClass(onDeposits(w))}>{fmt.pct(onDeposits(w), 0)}</b> on deposits
+        </>
+      ) : (
+        <>
+          <b className={pnlClass(w.roi)}>{fmt.pct(w.roi, 0)}</b> per $ traded
+        </>
+      )}{' '}
+      · {fmt.int(w.positions)} trades
     </>
   ) : (
     <>
@@ -232,8 +241,8 @@ export function Top24h({ rows }: { rows: DayLeader[] | undefined }) {
               </div>
               <div className="day-value num pos">{fmt.signed(d.pnl)}</div>
               <div className="day-sub">
-                {d.resolved} {d.resolved === 1 ? 'result' : 'results'} · {d.wins} won · ROI{' '}
-                <b className={pnlClass(d.roi)}>{fmt.pct(d.roi, 0)}</b>
+                {d.resolved} {d.resolved === 1 ? 'result' : 'results'} · {d.wins} won ·{' '}
+                <b className={pnlClass(d.roi)}>{fmt.pct(d.roi, 0)}</b> per $ traded
               </div>
             </Link>
           ))}
