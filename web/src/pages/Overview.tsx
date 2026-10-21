@@ -76,10 +76,10 @@ export default function Overview() {
         <div className="section-head">
           <h2>Activity</h2>
           <div className="segmented" role="tablist">
-            <button className={grain === 'daily' ? 'on' : ''} onClick={() => setGrain('daily')}>
+            <button className={grain === 'daily' ? 'on' : ''} aria-pressed={grain === 'daily'} onClick={() => setGrain('daily')}>
               Daily
             </button>
-            <button className={grain === 'hourly' ? 'on' : ''} onClick={() => setGrain('hourly')}>
+            <button className={grain === 'hourly' ? 'on' : ''} aria-pressed={grain === 'hourly'} onClick={() => setGrain('hourly')}>
               Hourly · 7d
             </button>
           </div>

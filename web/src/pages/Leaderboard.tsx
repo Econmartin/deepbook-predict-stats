@@ -55,24 +55,24 @@ export default function Leaderboard() {
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Period">
           {PERIODS.map((p) => (
-            <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>
+            <button key={p.key} className={period === p.key ? 'on' : ''} aria-pressed={period === p.key} onClick={() => setPeriod(p.key)}>
               {p.label}
             </button>
           ))}
         </div>
         <div className="segmented">
-          <button className={by === 'pnl' ? 'on' : ''} onClick={() => switchTo('pnl')}>
+          <button className={by === 'pnl' ? 'on' : ''} aria-pressed={by === 'pnl'} onClick={() => switchTo('pnl')}>
             Profit
           </button>
-          <button className={by === 'skill' ? 'on' : ''} onClick={() => switchTo('skill')}>
+          <button className={by === 'skill' ? 'on' : ''} aria-pressed={by === 'skill'} onClick={() => switchTo('skill')}>
             Skill
           </button>
         </div>
         <div className="segmented">
-          <button className={dir === 'desc' ? 'on' : ''} onClick={() => setDir('desc')}>
+          <button className={dir === 'desc' ? 'on' : ''} aria-pressed={dir === 'desc'} onClick={() => setDir('desc')}>
             {by === 'pnl' ? 'Top' : 'Beating odds'}
           </button>
-          <button className={dir === 'asc' ? 'on' : ''} onClick={() => setDir('asc')}>
+          <button className={dir === 'asc' ? 'on' : ''} aria-pressed={dir === 'asc'} onClick={() => setDir('asc')}>
             {by === 'pnl' ? 'Bottom' : 'Trailing odds'}
           </button>
         </div>

@@ -158,16 +158,16 @@ export function Leaders({ all, boards }: { all: Boards | null | undefined; board
     <section className="leaders">
       <div className="leaders-head">
         <div className="segmented">
-          <button className={board === 'pnl' ? 'on' : ''} onClick={() => setBoard('pnl')}>
+          <button className={board === 'pnl' ? 'on' : ''} aria-pressed={board === 'pnl'} onClick={() => setBoard('pnl')}>
             Top profit
           </button>
-          <button className={board === 'skill' ? 'on' : ''} onClick={() => setBoard('skill')}>
+          <button className={board === 'skill' ? 'on' : ''} aria-pressed={board === 'skill'} onClick={() => setBoard('skill')}>
             Beating the odds
           </button>
         </div>
         <div className="segmented" role="group" aria-label="Period">
           {PERIODS.map((p) => (
-            <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>
+            <button key={p.key} className={period === p.key ? 'on' : ''} aria-pressed={period === p.key} onClick={() => setPeriod(p.key)}>
               {p.label}
             </button>
           ))}

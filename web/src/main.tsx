@@ -81,10 +81,10 @@ function Footer() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         Explorer
         <div className="segmented">
-          <button className={ex.explorer === 'suivision' ? 'on' : ''} onClick={() => ex.setExplorer('suivision')}>
+          <button className={ex.explorer === 'suivision' ? 'on' : ''} aria-pressed={ex.explorer === 'suivision'} onClick={() => ex.setExplorer('suivision')}>
             SuiVision
           </button>
-          <button className={ex.explorer === 'suiscan' ? 'on' : ''} onClick={() => ex.setExplorer('suiscan')}>
+          <button className={ex.explorer === 'suiscan' ? 'on' : ''} aria-pressed={ex.explorer === 'suiscan'} onClick={() => ex.setExplorer('suiscan')}>
             Suiscan
           </button>
         </div>

@@ -48,7 +48,7 @@ export default function Markets() {
           {(['', 'open', 'settling', 'settled'] as const).map((s) => (
             <button
               key={s}
-              className={status === s ? 'on' : ''}
+              className={status === s ? 'on' : ''} aria-pressed={status === s}
               onClick={() => {
                 setStatus(s);
                 setOffset(0);

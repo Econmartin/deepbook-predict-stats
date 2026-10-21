@@ -509,18 +509,28 @@ h3 {
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--text);
+  color: var(--text-2);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
   padding: 5px 16px;
   border-radius: 7px;
   cursor: pointer;
-  transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
+.segmented button:hover:not(.on) {
+  color: var(--text);
+  background: var(--fill-2);
+}
+.segmented button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The selected option: a solid accent fill, so it reads at a glance in both themes. */
 .segmented button.on {
-  background: var(--bg-elev);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent);
   font-weight: 600;
 }
 
