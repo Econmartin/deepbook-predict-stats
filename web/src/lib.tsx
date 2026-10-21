@@ -78,6 +78,9 @@ export interface WalletStats {
 }
 
 /** Return on money actually deposited, else null. */
+/** Held positions a wallet needs to rank on a skill board, per window (mirrors server/export.ts). */
+export const SKILL_MIN_HELD = { '1d': 10, '7d': 10, '30d': 20, all: 20 } as const;
+
 export const onDeposits = (w: Pick<WalletStats, 'funding'>) => w.funding?.returnOnDeposits ?? null;
 
 export interface MarketStats {

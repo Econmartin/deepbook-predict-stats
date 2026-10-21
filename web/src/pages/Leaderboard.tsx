@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useRowNav } from '../components/tables';
 import { Addr, AsOfBadge, ErrorNote, SideBar, Skeleton, ZMeter } from '../components/ui';
-import { fmt, onDeposits, pnlClass, useData, type AsOf, type WalletStats } from '../lib';
+import { fmt, onDeposits, pnlClass, SKILL_MIN_HELD, useData, type AsOf, type WalletStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -19,8 +19,8 @@ type Period = (typeof PERIODS)[number]['key'];
 export default function Leaderboard() {
   const [by, setBy] = useState<'pnl' | 'skill'>('pnl');
   const [dir, setDir] = useState<'desc' | 'asc'>('desc');
-  const [min, setMin] = useState(by === 'skill' ? 20 : 0);
   const [period, setPeriod] = useState<Period>('all');
+  const [min, setMin] = useState(by === 'skill' ? SKILL_MIN_HELD[period] : 0);
   const { data: all, error } = useData<Resp>(PERIODS.find((p) => p.key === period)!.file);
   const allTime = period === 'all';
   const data = useMemo(() => {
@@ -36,7 +36,12 @@ export default function Leaderboard() {
 
   function switchTo(b: 'pnl' | 'skill') {
     setBy(b);
-    setMin(b === 'skill' ? 20 : 0);
+    setMin(b === 'skill' ? SKILL_MIN_HELD[period] : 0);
+  }
+  function choosePeriod(p: Period) {
+    setPeriod(p);
+    // Short windows hold fewer trades, so skill starts from a lower minimum.
+    if (by === 'skill') setMin(SKILL_MIN_HELD[p]);
   }
 
   return (
@@ -55,7 +60,7 @@ export default function Leaderboard() {
       <div className="toolbar">
         <div className="segmented" role="group" aria-label="Period">
           {PERIODS.map((p) => (
-            <button key={p.key} className={period === p.key ? 'on' : ''} aria-pressed={period === p.key} onClick={() => setPeriod(p.key)}>
+            <button key={p.key} className={period === p.key ? 'on' : ''} aria-pressed={period === p.key} onClick={() => choosePeriod(p.key)}>
               {p.label}
             </button>
           ))}
@@ -80,7 +85,7 @@ export default function Leaderboard() {
           Min. {by === 'skill' ? 'held positions' : 'closed trades'}
           <select value={min} onChange={(e) => setMin(Number(e.target.value))}>
             {/* Profit defaults to everyone, matching the front page and wallet ranks. */}
-            {(by === 'skill' ? [10, 20, 50, 100] : [0, 5, 20, 50]).map((n) => (
+            {(by === 'skill' ? [5, 10, 20, 50, 100] : [0, 5, 20, 50]).map((n) => (
               <option key={n} value={n}>
                 {n === 0 ? 'Any' : n}
               </option>

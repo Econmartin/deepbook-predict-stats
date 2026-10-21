@@ -37,6 +37,12 @@ const MARKET_FILE_DAYS = 30;
 
 /** Leaderboard windows: each ranks wallets on the trades they opened inside it. */
 const BOARD_WINDOWS = { '1d': 1, '7d': 7, '30d': 30 } as const;
+/**
+ * Skill boards need a sample so one lucky ticket can't top them: 20 held
+ * positions, but only 10 in the short windows, which rarely reach 20.
+ * Mirrored in web/src/lib.tsx.
+ */
+const SKILL_MIN_HELD = { '1d': 10, '7d': 10, '30d': 20, all: 20 } as const;
 const WALLET_POSITIONS = 2000;
 
 /** Downsample a cumulative PnL curve to at most `n` points for sparklines. */
@@ -117,15 +123,15 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db, names: Rec
       // No funding: deposits aren't scoped to a window, so neither is return on them.
       rows.push(walletStats(owner, inWindow));
     }
-    return { key, from, byOwner, rows: rows.sort((a, b) => b.realizedPnl - a.realizedPnl) };
+    return { key: key as keyof typeof BOARD_WINDOWS, from, byOwner, rows: rows.sort((a, b) => b.realizedPnl - a.realizedPnl) };
   });
-  const top10 = (rows: WalletStats[], byOwner: Map<string, Position[]>) => {
+  const top10 = (rows: WalletStats[], byOwner: Map<string, Position[]>, minHeld: number) => {
     const withSpark = (w: WalletStats) => ({ ...w, spark: spark(pnlCurve(byOwner.get(w.owner) ?? [])) });
     return {
       topWinners: rows.slice(0, 10).map(withSpark),
-      // Skill board: held-to-expiry z-score, with a minimum sample so one lucky ticket can't top it.
+      // Skill board: held-to-expiry z-score, over wallets with enough held positions.
       topSkill: rows
-        .filter((w) => w.held.n >= 20 && w.held.z != null)
+        .filter((w) => w.held.n >= minHeld && w.held.z != null)
         .sort((a, b) => b.held.z! - a.held.z!)
         .slice(0, 10)
         .map(withSpark),
@@ -136,8 +142,8 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db, names: Rec
     asOf,
     ...snap.overview,
     top24h,
-    ...top10(byPnl, snap.byOwner),
-    boards: Object.fromEntries(windows.map((w) => [w.key, top10(w.rows, w.byOwner)])),
+    ...top10(byPnl, snap.byOwner, SKILL_MIN_HELD.all),
+    boards: Object.fromEntries(windows.map((w) => [w.key, top10(w.rows, w.byOwner, SKILL_MIN_HELD[w.key])])),
     recent: snap.positions.slice(-12).reverse().map(pos),
     liveMarkets: snap.markets.filter((m) => m.status !== 'settled').slice(0, 8),
   });

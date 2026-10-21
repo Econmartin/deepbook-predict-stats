@@ -4,7 +4,7 @@
  * minutes (read live from the chain) get a "Trading now" pulse.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { fmt, Link, onDeposits, pnlClass, type WalletStats } from '../lib';
+import { fmt, Link, onDeposits, pnlClass, SKILL_MIN_HELD, type WalletStats } from '../lib';
 import { useLive, useNow } from '../live';
 import { Avatar, Skeleton, WalletName, ZMeter } from './ui';
 import { useRowNav } from './tables';
@@ -177,7 +177,7 @@ export function Leaders({ all, boards }: { all: Boards | null | undefined; board
         <span className="sub">
           {board === 'pnl'
             ? 'Realized cash after every fee.'
-            : 'Wins beyond what the prices implied, held-to-expiry, 20+ positions.'}
+            : `Wins beyond what the prices implied, held-to-expiry, ${SKILL_MIN_HELD[period]}+ positions.`}
           {period !== 'all' && ' Trades opened in this window only.'}
         </span>
       </div>
@@ -186,7 +186,7 @@ export function Leaders({ all, boards }: { all: Boards | null | undefined; board
         <Skeleton h={420} />
       ) : rows.length === 0 ? (
         <div className="card empty">
-          {board === 'skill' ? 'No wallet has 20+ held positions in this window yet.' : 'No trades in this window yet.'}
+          {board === 'skill' ? `No wallet has ${SKILL_MIN_HELD[period]}+ held positions in this window yet.` : 'No trades in this window yet.'}
         </div>
       ) : (
         <>
