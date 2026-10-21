@@ -1,7 +1,7 @@
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { BASE, ExplorerProvider, Link, normalizeAddress, RouterProvider, useExplorer, useRoute } from './lib';
+import { BASE, ExplorerProvider, Link, NamesProvider, normalizeAddress, RouterProvider, useExplorer, useRoute } from './lib';
 import Overview from './pages/Overview';
 import Leaderboard from './pages/Leaderboard';
 import Markets from './pages/Markets';
@@ -122,11 +122,13 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider>
       <ExplorerProvider>
-        <LiveProvider>
-          <Nav />
-          <Routes />
-          <Footer />
-        </LiveProvider>
+        <NamesProvider>
+          <LiveProvider>
+            <Nav />
+            <Routes />
+            <Footer />
+          </LiveProvider>
+        </NamesProvider>
       </ExplorerProvider>
     </RouterProvider>
   </StrictMode>,

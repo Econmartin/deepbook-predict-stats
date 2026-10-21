@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { fmt, Link, useExplorer, type AsOf, type Side, type Status } from '../lib';
+import { fmt, Link, useExplorer, useNames, type AsOf, type Side, type Status } from '../lib';
 import { useLive, useNow } from '../live';
 
 export function ExtIcon({ size = 12 }: { size?: number }) {
@@ -32,9 +32,23 @@ export function Avatar({ address, size = 22 }: { address: string; size?: number 
   );
 }
 
+/** A wallet's SuiNS name if it has one, else its short address; hover shows the full address. */
+export function WalletName({ address }: { address: string }) {
+  const name = useNames()(address);
+  return name ? (
+    <span className="sns" title={address}>
+      {name}
+    </span>
+  ) : (
+    <span className="mono" title={address}>
+      {fmt.short(address)}
+    </span>
+  );
+}
+
 export function Addr({ address, link = true, full = false }: { address: string; link?: boolean; full?: boolean }) {
   const ex = useExplorer();
-  const label = full ? address : fmt.short(address);
+  const label = full ? address : <WalletName address={address} />;
   return (
     <span className="addr">
       <Avatar address={address} />

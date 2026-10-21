@@ -7,6 +7,7 @@
  *   data/live-base.json       what the snapshot already counts for unexpired markets,
  *                             so browsers can add live chain events on top exactly
  *   data/overview.json        board stats, charts, calibration
+ *   data/names.json           SuiNS default name per wallet, where one is set
  *   data/wallets.json         every wallet's stats (leaderboards filter client-side)
  *   data/wallets-<1d|7d|30d>.json  the same, over trades opened in that window
  *   data/wallet/<addr>.json   one wallet: stats, PnL curve, positions
@@ -27,8 +28,8 @@ import { pnlCurve, walletStats, type Position, type Snapshot, type WalletStats }
 import { renderOgCard } from './og.js';
 
 /** Redraw the social share card from the snapshot. */
-export async function writeOgCard(snap: Snapshot, outDir: string): Promise<void> {
-  writeFileSync(join(outDir, 'og.png'), await renderOgCard(snap));
+export async function writeOgCard(snap: Snapshot, outDir: string, names: Record<string, string> = {}): Promise<void> {
+  writeFileSync(join(outDir, 'og.png'), await renderOgCard(snap, names));
 }
 
 /** Keep the published site bounded (GitHub Pages caps a site at 1 GB). */
@@ -52,7 +53,7 @@ function write(path: string, data: unknown) {
   writeFileSync(path, JSON.stringify(data));
 }
 
-export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: number } {
+export function exportStatic(snap: Snapshot, outDir: string, db?: Db, names: Record<string, string> = {}): { files: number } {
   const asOf = { ...snap.asOf, builtAtMs: snap.builtAtMs };
   // Build into a temp dir and swap, so a server never serves a half-written set.
   const tmp = join(outDir, `.data-${process.pid}`);
@@ -72,6 +73,8 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
     eventModule: `${sdkConfig().packages.predictV1}::order_events`,
     quoteCoin: sdkConfig().quoteCoinType,
   });
+
+  put('names.json', names);
 
   // Markets still open at export time, with their trader sets, so the browser
   // can merge live mints (checkpoint > mintCheckpoint) without double counting.
@@ -196,12 +199,14 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { openDb } = await import('./db.js');
   const { buildSnapshot } = await import('./stats.js');
+  const { resolveNames } = await import('./names.js');
   const outDir = process.argv[2] ?? 'web/dist';
   mkdirSync(outDir, { recursive: true });
   const db = openDb();
   const t0 = Date.now();
   const snap = buildSnapshot(db);
-  const r = exportStatic(snap, outDir, db);
-  await writeOgCard(snap, outDir);
-  console.log(JSON.stringify({ ok: true, outDir, ...r, ms: Date.now() - t0 }));
+  const names = await resolveNames(snap.wallets.map((w) => w.owner));
+  const r = exportStatic(snap, outDir, db, names);
+  await writeOgCard(snap, outDir, names);
+  console.log(JSON.stringify({ ok: true, outDir, ...r, names: Object.keys(names).length, ms: Date.now() - t0 }));
 }

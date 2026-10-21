@@ -32,6 +32,11 @@ const C = {
 };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** A wallet's SuiNS name when it has one, clipped to fit the podium. */
+const walletLabel = (a: string, names: Record<string, string>) => {
+  const n = names[a];
+  return !n ? short(a) : n.length > 22 ? `${n.slice(0, 21)}…` : n;
+};
 const usd = (v: number) =>
   `${v < 0 ? '−' : v > 0 ? '+' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const compact = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(0)}`);
@@ -50,7 +55,7 @@ function avatar(address: string, size: number): ReactNode {
   });
 }
 
-function leader(w: WalletStats, rank: number): ReactNode {
+function leader(w: WalletStats, rank: number, names: Record<string, string>): ReactNode {
   const tone = [C.gold, C.silver, C.bronze][rank - 1]!;
   const first = rank === 1;
   return h(
@@ -92,7 +97,7 @@ function leader(w: WalletStats, rank: number): ReactNode {
       ),
       avatar(w.owner, first ? 44 : 38),
     ),
-    h('div', { style: { display: 'flex', marginTop: 18, fontSize: 20, color: C.text2, fontWeight: 500 } }, short(w.owner)),
+    h('div', { style: { display: 'flex', marginTop: 18, fontSize: 20, color: C.text2, fontWeight: 500 } }, walletLabel(w.owner, names)),
     h(
       'div',
       {
@@ -126,11 +131,11 @@ function stat(label: string, value: string): ReactNode {
   );
 }
 
-export async function renderOgCard(snap: Snapshot): Promise<Buffer> {
+export async function renderOgCard(snap: Snapshot, names: Record<string, string> = {}): Promise<Buffer> {
   const top = [...snap.wallets].sort((a, b) => b.realizedPnl - a.realizedPnl).slice(0, 3);
   const t = snap.overview.totals;
   // Podium order: #2, #1, #3.
-  const podium = [top[1], top[0], top[2]].map((w, i) => (w ? leader(w, [2, 1, 3][i]!) : null));
+  const podium = [top[1], top[0], top[2]].map((w, i) => (w ? leader(w, [2, 1, 3][i]!, names) : null));
 
   const tree = h(
     'div',

@@ -2,7 +2,7 @@ import { AreaLine } from '../components/charts';
 import { useLive } from '../live';
 import { PositionsTable } from '../components/tables';
 import { Addr, AsOfBadge, Avatar, ErrorNote, Ext, SideBar, Skeleton, Stat, ZMeter } from '../components/ui';
-import { fmt, normalizeAddress, pnlClass, useData, useExplorer, type AsOf, type Position, type WalletStats } from '../lib';
+import { fmt, normalizeAddress, pnlClass, useData, useExplorer, useNames, type AsOf, type Position, type WalletStats } from '../lib';
 
 interface Resp {
   asOf: AsOf;
@@ -19,6 +19,7 @@ export default function Wallet({ address }: { address: string }) {
   const owner = normalizeAddress(address);
   const { data, error, notFound } = useData<Resp>(owner ? `wallet/${owner}.json` : null);
   const ex = useExplorer();
+  const nameOf = useNames();
   const live = useLive();
   const liveTrades = live.trades.filter((p) => p.owner === owner);
   if (!owner) return <div className="page-head"><h1>Not a Sui address</h1></div>;
@@ -27,7 +28,7 @@ export default function Wallet({ address }: { address: string }) {
       <div className="page-head fade-in">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Avatar address={owner} size={56} />
-          <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>{fmt.short(owner)}</h1>
+          <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>{nameOf(owner) ?? fmt.short(owner)}</h1>
         </div>
         <p className="mono" style={{ wordBreak: 'break-all', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
           {owner}
@@ -69,7 +70,7 @@ export default function Wallet({ address }: { address: string }) {
               Wallet{data.rank ? ` · #${data.rank.pnl} of ${fmt.int(data.rank.of)} by profit` : ''}
             </div>
             <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)' }} className="num">
-              {fmt.short(data.owner)}
+              {nameOf(data.owner) ?? fmt.short(data.owner)}
             </h1>
           </div>
         </div>

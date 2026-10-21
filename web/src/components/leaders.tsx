@@ -6,7 +6,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { fmt, Link, onDeposits, pnlClass, type WalletStats } from '../lib';
 import { useLive, useNow } from '../live';
-import { Avatar, Skeleton, ZMeter } from './ui';
+import { Avatar, Skeleton, WalletName, ZMeter } from './ui';
 import { useRowNav } from './tables';
 
 type Leader = WalletStats & { spark: number[] };
@@ -115,7 +115,9 @@ function PodiumCard({ w, rank, board, active }: { w: Leader; rank: number; board
       </div>
       <div className="podium-id">
         <Avatar address={w.owner} size={rank === 1 ? 64 : 52} />
-        <span className="mono podium-addr">{fmt.short(w.owner)}</span>
+        <span className="podium-addr">
+          <WalletName address={w.owner} />
+        </span>
       </div>
       <div className="podium-value num">{headline(w, board)}</div>
       <div className="podium-sub">{subline(w, board)}</div>
@@ -200,8 +202,8 @@ export function Leaders({ all, boards }: { all: Boards | null | undefined; board
                 <span className="runner-rank">{i + 4}</span>
                 <Avatar address={w.owner} size={32} />
                 <span className="runner-id">
-                  <Link to={`/wallet/${w.owner}`} className="mono">
-                    {fmt.short(w.owner)}
+                  <Link to={`/wallet/${w.owner}`}>
+                    <WalletName address={w.owner} />
                   </Link>
                   <span className="runner-sub">
                     {subline(w, board)}

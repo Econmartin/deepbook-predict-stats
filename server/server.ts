@@ -20,6 +20,7 @@ import { openDb } from './db.js';
 import { syncOnce } from './indexer.js';
 import { buildSnapshot } from './stats.js';
 import { exportStatic, writeOgCard } from './export.js';
+import { resolveNames } from './names.js';
 
 const db = openDb();
 const exportDir = process.env.EXPORT_DIR || 'data/site';
@@ -27,15 +28,26 @@ mkdirSync(exportDir, { recursive: true });
 
 const DB_EXPORT_EVERY_MS = 10 * 60_000;
 let lastDbExport = 0;
+// SuiNS names change rarely and take a while to look up, so they refresh in
+// the background on the database cadence; each export uses the latest set.
+let names: Record<string, string> = {};
+let resolving = false;
 
 function publish() {
   const withDb = Date.now() - lastDbExport > DB_EXPORT_EVERY_MS;
   const snap = buildSnapshot(db);
-  exportStatic(snap, exportDir, withDb ? db : undefined);
+  exportStatic(snap, exportDir, withDb ? db : undefined, names);
   if (withDb) {
     lastDbExport = Date.now();
     // The share card changes slowly and takes a moment to draw.
-    writeOgCard(snap, exportDir).catch((e) => console.error('[og] failed', e));
+    writeOgCard(snap, exportDir, names).catch((e) => console.error('[og] failed', e));
+    if (!resolving) {
+      resolving = true;
+      resolveNames(snap.wallets.map((w) => w.owner))
+        .then((n) => (names = n))
+        .catch((e) => console.error('[names] failed', e))
+        .finally(() => (resolving = false));
+    }
   }
 }
 

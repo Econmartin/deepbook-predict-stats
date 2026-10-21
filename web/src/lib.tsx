@@ -314,6 +314,21 @@ export function useExplorer() {
   };
 }
 
+// ── SuiNS names (from the snapshot; display only) ──────────────────────────
+
+const NamesCtx = createContext<Record<string, string>>({});
+
+export function NamesProvider({ children }: { children: ReactNode }) {
+  const { data } = useData<Record<string, string>>('names.json', 10 * 60_000);
+  return <NamesCtx.Provider value={data ?? {}}>{children}</NamesCtx.Provider>;
+}
+
+/** A wallet's SuiNS name, or null when it hasn't set one. */
+export function useNames(): (a: string) => string | null {
+  const names = useContext(NamesCtx);
+  return (a) => names[a] ?? null;
+}
+
 // ── router (history API, no dependency) ────────────────────────────────────
 
 const RouteCtx = createContext<{ path: string; go: (to: string) => void }>({ path: '/', go: () => {} });
