@@ -8,6 +8,7 @@
  *                             so browsers can add live chain events on top exactly
  *   data/overview.json        board stats, charts, calibration
  *   data/wallets.json         every wallet's stats (leaderboards filter client-side)
+ *   data/wallets-<1d|7d|30d>.json  the same, over trades opened in that window
  *   data/wallet/<addr>.json   one wallet: stats, PnL curve, positions
  *   data/markets/<view>.json  recent / top-volume / top-traders market lists
  *   data/market/<id>.json     one market and its positions
@@ -22,7 +23,7 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { GRPC_URL, NETWORK, sdkConfig } from './chain.js';
 import type { Db } from './db.js';
-import { pnlCurve, type Position, type Snapshot } from './stats.js';
+import { pnlCurve, walletStats, type Position, type Snapshot, type WalletStats } from './stats.js';
 import { renderOgCard } from './og.js';
 
 /** Redraw the social share card from the snapshot. */
@@ -32,6 +33,9 @@ export async function writeOgCard(snap: Snapshot, outDir: string): Promise<void>
 
 /** Keep the published site bounded (GitHub Pages caps a site at 1 GB). */
 const MARKET_FILE_DAYS = 30;
+
+/** Leaderboard windows: each ranks wallets on the trades they opened inside it. */
+const BOARD_WINDOWS = { '1d': 1, '7d': 7, '30d': 30 } as const;
 const WALLET_POSITIONS = 2000;
 
 /** Downsample a cumulative PnL curve to at most `n` points for sparklines. */
@@ -97,22 +101,46 @@ export function exportStatic(snap: Snapshot, outDir: string, db?: Db): { files: 
     .map((d) => ({ ...d, roi: d.spent > 0 ? d.pnl / d.spent : null }));
 
   const byPnl = [...snap.wallets].sort((a, b) => b.realizedPnl - a.realizedPnl);
+
+  // The same stats over each window, from only the trades opened inside it.
+  const windows = Object.entries(BOARD_WINDOWS).map(([key, days]) => {
+    const from = snap.builtAtMs - days * 86400_000;
+    const byOwner = new Map<string, Position[]>();
+    const rows = [];
+    for (const [owner, ps] of snap.byOwner) {
+      const inWindow = ps.filter((p) => p.mintedAtMs >= from);
+      if (!inWindow.length) continue;
+      byOwner.set(owner, inWindow);
+      // No funding: deposits aren't scoped to a window, so neither is return on them.
+      rows.push(walletStats(owner, inWindow));
+    }
+    return { key, from, byOwner, rows: rows.sort((a, b) => b.realizedPnl - a.realizedPnl) };
+  });
+  const top10 = (rows: WalletStats[], byOwner: Map<string, Position[]>) => {
+    const withSpark = (w: WalletStats) => ({ ...w, spark: spark(pnlCurve(byOwner.get(w.owner) ?? [])) });
+    return {
+      topWinners: rows.slice(0, 10).map(withSpark),
+      // Skill board: held-to-expiry z-score, with a minimum sample so one lucky ticket can't top it.
+      topSkill: rows
+        .filter((w) => w.held.n >= 20 && w.held.z != null)
+        .sort((a, b) => b.held.z! - a.held.z!)
+        .slice(0, 10)
+        .map(withSpark),
+    };
+  };
+
   put('overview.json', {
     asOf,
     ...snap.overview,
     top24h,
-    topWinners: byPnl.slice(0, 10).map((w) => ({ ...w, spark: spark(pnlCurve(snap.byOwner.get(w.owner) ?? [])) })),
-    // Skill board: held-to-expiry z-score, with a minimum sample so one lucky ticket can't top it.
-    topSkill: snap.wallets
-      .filter((w) => w.held.n >= 20 && w.held.z != null)
-      .sort((a, b) => b.held.z! - a.held.z!)
-      .slice(0, 10)
-      .map((w) => ({ ...w, spark: spark(pnlCurve(snap.byOwner.get(w.owner) ?? [])) })),
+    ...top10(byPnl, snap.byOwner),
+    boards: Object.fromEntries(windows.map((w) => [w.key, top10(w.rows, w.byOwner)])),
     recent: snap.positions.slice(-12).reverse().map(pos),
     liveMarkets: snap.markets.filter((m) => m.status !== 'settled').slice(0, 8),
   });
 
   put('wallets.json', { asOf, rows: byPnl });
+  for (const w of windows) put(`wallets-${w.key}.json`, { asOf, fromMs: w.from, rows: w.rows });
 
   byPnl.forEach((w, i) => {
     const ps = snap.byOwner.get(w.owner) ?? [];

@@ -43,7 +43,7 @@ export default function Overview() {
         <AsOfBadge asOf={data?.asOf} />
       </div>
 
-      <Leaders winners={data?.topWinners} skill={data?.topSkill} />
+      <Leaders all={data && { topWinners: data.topWinners, topSkill: data.topSkill }} boards={data?.boards} />
 
       <Top24h rows={data?.top24h} />
 

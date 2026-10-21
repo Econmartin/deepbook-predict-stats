@@ -11,6 +11,14 @@ import { useRowNav } from './tables';
 
 type Leader = WalletStats & { spark: number[] };
 type Board = 'pnl' | 'skill';
+type Boards = { topWinners: Leader[]; topSkill: Leader[] };
+type Period = 'all' | '1d' | '7d' | '30d';
+const PERIODS: Array<{ key: Period; label: string }> = [
+  { key: '1d', label: '24h' },
+  { key: '7d', label: '7d' },
+  { key: '30d', label: '30d' },
+  { key: 'all', label: 'All time' },
+];
 
 const TRADING_NOW_MS = 5 * 60_000;
 const MEDAL = ['gold', 'silver', 'bronze'] as const;
@@ -133,8 +141,9 @@ function PodiumCard({ w, rank, board, active }: { w: Leader; rank: number; board
   );
 }
 
-export function Leaders({ winners, skill }: { winners: Leader[] | undefined; skill: Leader[] | undefined }) {
+export function Leaders({ all, boards }: { all: Boards | null | undefined; boards: Partial<Record<Period, Boards>> | undefined }) {
   const [board, setBoard] = useState<Board>('pnl');
+  const [period, setPeriod] = useState<Period>('all');
   const live = useLive();
   const now = useNow(15_000);
   const nav = useRowNav();
@@ -142,7 +151,8 @@ export function Leaders({ winners, skill }: { winners: Leader[] | undefined; ski
     () => new Set(live.trades.filter((t) => now - t.mintedAtMs < TRADING_NOW_MS).map((t) => t.owner)),
     [live.trades, now],
   );
-  const rows = board === 'pnl' ? winners : skill;
+  const set = period === 'all' ? all : all ? (boards?.[period] ?? { topWinners: [], topSkill: [] }) : undefined;
+  const rows = set ? (board === 'pnl' ? set.topWinners : set.topSkill) : undefined;
 
   return (
     <section className="leaders">
@@ -155,15 +165,27 @@ export function Leaders({ winners, skill }: { winners: Leader[] | undefined; ski
             Beating the odds
           </button>
         </div>
+        <div className="segmented" role="group" aria-label="Period">
+          {PERIODS.map((p) => (
+            <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
         <span className="sub">
           {board === 'pnl'
             ? 'Realized cash after every fee.'
             : 'Wins beyond what the prices implied, held-to-expiry, 20+ positions.'}
+          {period !== 'all' && ' Trades opened in this window only.'}
         </span>
       </div>
 
       {!rows ? (
         <Skeleton h={420} />
+      ) : rows.length === 0 ? (
+        <div className="card empty">
+          {board === 'skill' ? 'No wallet has 20+ held positions in this window yet.' : 'No trades in this window yet.'}
+        </div>
       ) : (
         <>
           <div className="podium">

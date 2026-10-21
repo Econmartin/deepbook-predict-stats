@@ -8,11 +8,21 @@ interface Resp {
   rows: WalletStats[];
 }
 
+const PERIODS = [
+  { key: '1d', label: '24h', file: 'wallets-1d.json' },
+  { key: '7d', label: '7d', file: 'wallets-7d.json' },
+  { key: '30d', label: '30d', file: 'wallets-30d.json' },
+  { key: 'all', label: 'All time', file: 'wallets.json' },
+] as const;
+type Period = (typeof PERIODS)[number]['key'];
+
 export default function Leaderboard() {
   const [by, setBy] = useState<'pnl' | 'skill'>('pnl');
   const [dir, setDir] = useState<'desc' | 'asc'>('desc');
   const [min, setMin] = useState(by === 'skill' ? 20 : 0);
-  const { data: all, error } = useData<Resp>('wallets.json');
+  const [period, setPeriod] = useState<Period>('all');
+  const { data: all, error } = useData<Resp>(PERIODS.find((p) => p.key === period)!.file);
+  const allTime = period === 'all';
   const data = useMemo(() => {
     if (!all) return null;
     const sign = dir === 'asc' ? 1 : -1;
@@ -37,11 +47,19 @@ export default function Leaderboard() {
           {by === 'pnl'
             ? 'Ranked by realized cash result after every fee. Open positions don’t count until they close or settle.'
             : 'Ranked by how much more often a wallet wins than the prices it paid implied — held-to-expiry positions only. A z-score beyond +2σ is hard to explain with luck.'}
+          {!allTime && ' Only trades opened in this window count.'}
         </p>
         <AsOfBadge asOf={data?.asOf} />
       </div>
 
       <div className="toolbar">
+        <div className="segmented" role="group" aria-label="Period">
+          {PERIODS.map((p) => (
+            <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="segmented">
           <button className={by === 'pnl' ? 'on' : ''} onClick={() => switchTo('pnl')}>
             Profit
@@ -77,7 +95,7 @@ export default function Leaderboard() {
         {!data ? (
           <Skeleton h={480} style={{ margin: 20 }} />
         ) : data.rows.length === 0 ? (
-          <div className="empty">No wallets meet this threshold yet.</div>
+          <div className="empty">{allTime ? 'No wallets meet this threshold yet.' : 'No wallets meet this threshold in this window.'}</div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -86,7 +104,9 @@ export default function Leaderboard() {
                   <th>#</th>
                   <th>Wallet</th>
                   <th className="r">Net PnL</th>
-                  <th className="r" title="(Realized profit − app fees) ÷ money deposited into the Predict account">On deposits</th>
+                  {allTime && (
+                    <th className="r" title="(Realized profit − app fees) ÷ money deposited into the Predict account">On deposits</th>
+                  )}
                   <th className="r" title="Realized profit ÷ total spent on resolved trades. Shrinks as the same money is traded over and over.">Per $ traded</th>
                   <th className="r">Trades</th>
                   <th className="r" title="Held-to-expiry wins / implied by price paid">Won vs implied</th>
@@ -109,9 +129,11 @@ export default function Leaderboard() {
                     <td className={`r ${pnlClass(w.realizedPnl)}`} style={{ fontWeight: 600 }}>
                       {fmt.signed(w.realizedPnl)}
                     </td>
-                    <td className={`r ${pnlClass(onDeposits(w))}`} style={{ fontWeight: 600 }}>
-                      {fmt.pct(onDeposits(w), 0)}
-                    </td>
+                    {allTime && (
+                      <td className={`r ${pnlClass(onDeposits(w))}`} style={{ fontWeight: 600 }}>
+                        {fmt.pct(onDeposits(w), 0)}
+                      </td>
+                    )}
                     <td className={`r ${pnlClass(w.roi)}`}>{fmt.pct(w.roi)}</td>
                     <td className="r">{fmt.int(w.positions)}</td>
                     <td className="r">
