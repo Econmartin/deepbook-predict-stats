@@ -105,6 +105,63 @@ CREATE TABLE IF NOT EXISTS account_flows (
 CREATE INDEX IF NOT EXISTS ix_flows_account ON account_flows(account_id);
 CREATE INDEX IF NOT EXISTS ix_flows_digest ON account_flows(digest);
 
+-- Predict v4 queued orders (deepbook_predict_orders::queue_events).
+-- An enqueue debits the trader's account (escrow + order fee) in their own
+-- transaction; a keeper fills it later. kind: 0-2 mint, 4 sell.
+CREATE TABLE IF NOT EXISTS enqueues (
+  event_id TEXT PRIMARY KEY,
+  digest TEXT NOT NULL,
+  checkpoint INTEGER NOT NULL,
+  ts_ms INTEGER NOT NULL,
+  account_id TEXT NOT NULL,
+  market_id TEXT NOT NULL,
+  kind INTEGER NOT NULL,
+  budget INTEGER NOT NULL,
+  order_fee INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_enqueues_digest ON enqueues(digest);
+
+-- A keeper fill: carries the order fee, which OrderMinted / LiveOrderRedeemed
+-- don't, and the position it opened (order_id, root_id; zero after a full close).
+CREATE TABLE IF NOT EXISTS queue_fills (
+  event_id TEXT PRIMARY KEY,
+  digest TEXT NOT NULL,
+  checkpoint INTEGER NOT NULL,
+  ts_ms INTEGER NOT NULL,
+  account_id TEXT NOT NULL,
+  market_id TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  kind INTEGER NOT NULL,
+  quantity INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  order_fee INTEGER NOT NULL,
+  order_id TEXT NOT NULL,
+  root_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_queue_fills_order ON queue_fills(market_id, order_id);
+CREATE INDEX IF NOT EXISTS ix_queue_fills_digest ON queue_fills(digest, market_id);
+
+-- Settlement payouts the keeper pays to each held record (zero for a loser).
+-- Replaces SettledOrderRedeemed; keyed by the record's current order id.
+CREATE TABLE IF NOT EXISTS record_settles (
+  event_id TEXT PRIMARY KEY,
+  digest TEXT NOT NULL,
+  checkpoint INTEGER NOT NULL,
+  ts_ms INTEGER NOT NULL,
+  account_id TEXT NOT NULL,
+  market_id TEXT NOT NULL,
+  order_id TEXT NOT NULL,
+  payout INTEGER NOT NULL
+);
+
+-- Every settlement payout, from either protocol version, keyed by position root.
+CREATE VIEW IF NOT EXISTS all_claims AS
+  SELECT digest, ts_ms, market_id, root_id, payout FROM claims
+  UNION ALL
+  SELECT s.digest, s.ts_ms, s.market_id, COALESCE(f.root_id, s.order_id), s.payout
+  FROM record_settles s
+  LEFT JOIN queue_fills f ON f.market_id = s.market_id AND f.order_id = s.order_id AND f.order_id <> '0';
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

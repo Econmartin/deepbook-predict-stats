@@ -28,6 +28,14 @@ export function sdkConfig(): PredictConfig {
   return predict.cfg;
 }
 
+/**
+ * The fullnode prunes old history: a cursor older than what it still serves
+ * fails with OUT_OF_RANGE ("requested data below earliest available").
+ */
+export function isPruned(e: unknown): boolean {
+  return (e as { code?: string })?.code === 'OUT_OF_RANGE';
+}
+
 /** Retry transient gRPC failures (rate limits, resets) with jittered backoff. */
 export async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
   let last: unknown;
@@ -35,6 +43,7 @@ export async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<
     try {
       return await fn();
     } catch (e) {
+      if (isPruned(e)) throw e;
       last = e;
       await new Promise((r) => setTimeout(r, 250 * 2 ** i + Math.random() * 250));
     }
@@ -45,12 +54,27 @@ export async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<
 export type OrderEventName = 'OrderMinted' | 'LiveOrderRedeemed' | 'SettledOrderRedeemed';
 /** Predict's account package: money in and out of each trader's account. */
 export type AccountEventName = 'AccountCreated' | 'Deposited' | 'Withdrawn' | 'FundsSettled';
-export type EventName = OrderEventName | AccountEventName;
+/**
+ * Predict v4 (delayed execution): traders enqueue orders and a keeper fills
+ * them in its own transaction, so OrderMinted / LiveOrderRedeemed now come
+ * from keeper transactions, and settlement payouts arrive as OpenRecordSettled
+ * instead of SettledOrderRedeemed.
+ */
+export type QueueEventName = 'OrderEnqueued' | 'QueuedOrderFilled' | 'OpenRecordSettled';
+export type EventName = OrderEventName | AccountEventName | QueueEventName;
 
 const ACCOUNT_EVENTS: readonly string[] = ['AccountCreated', 'Deposited', 'Withdrawn', 'FundsSettled'];
+const QUEUE_EVENTS: readonly string[] = ['OrderEnqueued', 'QueuedOrderFilled', 'OpenRecordSettled'];
+
+/** The order-flow package's original id (event types stay with it), if this SDK records one. */
+export function ordersPackage(): string | null {
+  const pk = sdkConfig().packages as { predictOrdersV1?: string; predictOrders?: string };
+  return pk.predictOrdersV1 ?? pk.predictOrders ?? null;
+}
 
 export function eventType(name: EventName): string {
   const pk = sdkConfig().packages;
+  if (QUEUE_EVENTS.includes(name)) return `${ordersPackage()}::queue_events::${name}`;
   return ACCOUNT_EVENTS.includes(name)
     ? `${pk.account}::account_events::${name}`
     : `${pk.predictV1}::order_events::${name}`;
@@ -62,6 +86,8 @@ export interface ChainEvent {
   eventIndex: number;
   checkpoint: number;
   sender: string;
+  /** The module whose call emitted the event (`queue` for a keeper fill). */
+  module: string;
   json: Record<string, string | null>;
 }
 
@@ -83,6 +109,7 @@ export async function eventPage(
       eventIndex: number;
       checkpoint: string;
       sender: string;
+      module?: string;
       json?: Record<string, string | null>;
     }>;
     hasNextPage?: boolean;
@@ -94,6 +121,7 @@ export async function eventPage(
       eventIndex: Number(e.eventIndex),
       checkpoint: Number(e.checkpoint),
       sender: e.sender,
+      module: e.module ?? '',
       json: e.json ?? {},
     })),
     nextCursor: r.endCursor ?? cursor,

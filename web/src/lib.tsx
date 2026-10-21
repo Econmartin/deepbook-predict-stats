@@ -73,7 +73,7 @@ export interface WalletStats {
     balance: number | null;
     unclaimed: number;
     returnOnDeposits: number | null;
-    reconciled: boolean;
+    reconciled: boolean | null;
   } | null;
 }
 
@@ -146,6 +146,8 @@ export interface Overview {
     referral: number;
     impactCharged: number;
     impactRebated: number;
+    /** Predict v4's per-order queue fee. */
+    order: number;
     total: number;
   };
   reconciliation: { claimChecked: number; claimMatched: number; exitEvents: number; claimEvents: number };

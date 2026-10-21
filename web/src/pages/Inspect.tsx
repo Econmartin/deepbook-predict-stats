@@ -118,7 +118,7 @@ export function InspectTx({ digest }: { digest: string }) {
           <div className="tx-meta">
             <span>{new Date(tx.timestampMs).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium' })}</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              Signed by <Addr address={tx.sender} link={false} />
+              {tx.keeper ? 'Sent by keeper' : 'Signed by'} <Addr address={tx.sender} link={false} />
             </span>
             <span>
               {tx.gasSui >= 0
@@ -134,11 +134,15 @@ export function InspectTx({ digest }: { digest: string }) {
       ) : !tx ? (
         <Skeleton h={420} />
       ) : tx.items.length === 0 ? (
-        <div className="card empty">This transaction has no DeepBook Predict trades in it.</div>
+        <div className="card empty">
+          {tx.enqueued > 0
+            ? `This transaction queued ${tx.enqueued === 1 ? 'an order' : `${tx.enqueued} orders`}. A keeper fills queued orders in its own transaction a moment later — inspect that one (it’s on the wallet’s trade list) for the price and fees.`
+            : 'This transaction has no DeepBook Predict trades in it.'}
+        </div>
       ) : (
         tx.items.map((it, i) =>
           it.kind === 'buy' ? (
-            <BuyCard key={i} b={it} sender={tx.sender} gasSui={i === 0 ? tx.gasSui : 0} />
+            <BuyCard key={i} b={it} sender={tx.keeper ? '' : tx.sender} gasSui={i === 0 && !tx.keeper ? tx.gasSui : 0} />
           ) : it.kind === 'sell' ? (
             <SellCard key={i} s={it} />
           ) : (
@@ -176,6 +180,7 @@ function BuyCard({ b, sender, gasSui }: { b: BuyBreakdown; sender: string; gasSu
     { key: 'cong', label: 'Congestion surcharge', note: 'charged when Sui gas is busy', amount: b.congestion, color: 'var(--range)' },
     { key: 'impact', label: 'Price impact', note: 'size charge, partly refunded if you sell early', amount: b.impact, color: 'var(--accent-2)' },
     { key: 'builder', label: 'Builder fee', note: 'to the app that built the trade', amount: b.builder, color: 'var(--text-3)' },
+    { key: 'order', label: 'Order fee', note: 'flat fee per queued order', amount: b.orderFee, color: 'var(--text-2)' },
   ];
   const shown = lines.filter((l) => l.amount > 0 || l.key === 'fair');
   const gross = shown.reduce((a, l) => a + l.amount, 0);
@@ -359,6 +364,7 @@ function SellCard({ s }: { s: SellBreakdown }) {
     { label: 'Congestion surcharge', note: '', amount: s.congestion, sign: -1 },
     { label: 'Builder fee', note: '', amount: s.builder, sign: -1 },
     { label: 'Price-impact refund', note: 'part of the impact charge paid at purchase', amount: s.impactRefund, sign: 1 },
+    { label: 'Order fee', note: 'flat fee per queued order', amount: s.orderFee, sign: -1 },
   ].filter((r) => r.amount > 0 || r.label === 'Sale value');
   return (
     <section className="card inspect-card fade-in">
@@ -406,11 +412,16 @@ function ClaimCard({ c: cl }: { c: ClaimBreakdown }) {
       <div className="inspect-head">
         <div>
           <div className="card-title" style={{ justifyContent: 'flex-start', gap: 10 }}>
-            <span>Claimed after settlement</span>
+            <span>Settlement payout</span>
             <span className="muted">{cl.market.underlying}</span>
           </div>
           <div className="inspect-owner">
-            Position of <Addr address={cl.owner} /> <span className="faint">·</span> <MarketLink id={cl.market.id} label="market" />
+            {cl.owner && (
+              <>
+                Position of <Addr address={cl.owner} /> <span className="faint">·</span>{' '}
+              </>
+            )}
+            <MarketLink id={cl.market.id} label="market" />
           </div>
         </div>
         <span className={`pill ${cl.payout > 0 ? 'won' : 'lost'}`}>{cl.payout > 0 ? 'Winning claim' : 'Nothing to claim'}</span>

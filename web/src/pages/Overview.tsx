@@ -209,6 +209,8 @@ export default function Overview() {
                   <dd>{fmt.usd(data.fees.penalty)}</dd>
                   <dt>Builder fees</dt>
                   <dd>{fmt.usd(data.fees.builder)}</dd>
+                  <dt>Order fees · queued orders</dt>
+                  <dd>{fmt.usd(data.fees.order)}</dd>
                   <dt className="faint">Fees sponsored by incentives</dt>
                   <dd className="faint">{fmt.usd(data.fees.subsidy)}</dd>
                   <dt className="faint">Inventory impact, net</dt>
@@ -294,7 +296,7 @@ export default function Overview() {
           <div className="callout">
             <b>Reconciled to chain.</b> Of {fmt.int(data.reconciliation.claimChecked)} settled positions claimed on-chain,
             the payout we compute from the market’s settlement price matches the{' '}
-            <code className="mono">SettledOrderRedeemed</code> payout to the base unit for{' '}
+            on-chain payout (<code className="mono">SettledOrderRedeemed</code> or <code className="mono">OpenRecordSettled</code>) to the base unit for{' '}
             {data.reconciliation.claimMatched === data.reconciliation.claimChecked
               ? 'every one'
               : `${fmt.int(data.reconciliation.claimMatched)} of them`}

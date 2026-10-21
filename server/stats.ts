@@ -70,6 +70,7 @@ interface Row {
   subsidy: number;
   builder_fee: number;
   penalty_fee: number;
+  order_fee: number;
   underlying: string | null;
   expiry_ms: number | null;
   tick_size: string | null;
@@ -84,27 +85,38 @@ interface Row {
   c_digest: string | null;
 }
 
+/**
+ * A queued sell's order fee, for one exit row `ex`. The fill event names the
+ * account, not the position (a full close zeroes it), so a sell is matched by
+ * transaction, market and owner; the rare case of several in one is split evenly.
+ */
+const SELL_ORDER_FEE = `COALESCE((
+  SELECT SUM(f.order_fee) / COUNT(*) FROM queue_fills f JOIN accounts a ON a.account_id = f.account_id
+  WHERE f.digest = ex.digest AND f.market_id = ex.market_id AND a.owner = ex.owner AND f.kind = 4), 0)`;
+
 export function loadPositions(db: Db, nowMs: number): Position[] {
   const rows = db
     .prepare(
       `SELECT m.root_id, m.owner, m.sender, m.market_id, m.digest, m.ts_ms, m.lower_tick, m.higher_tick,
-              m.side, m.entry_prob, m.quantity, m.cost, m.trading_fee, m.subsidy, m.builder_fee,
-              m.penalty_fee, k.underlying, k.expiry_ms, k.tick_size, k.settlement_price,
+              m.side, m.entry_prob, m.quantity, m.cost + COALESCE(qf.order_fee, 0) AS cost, m.trading_fee, m.subsidy,
+              m.builder_fee, m.penalty_fee, COALESCE(qf.order_fee, 0) AS order_fee, k.underlying, k.expiry_ms, k.tick_size, k.settlement_price,
               x.proceeds AS x_proceeds, x.qty AS x_qty, x.fees AS x_fees, x.n AS x_n,
               x.last AS x_last, x.digest AS x_digest, c.payout AS c_payout, c.digest AS c_digest
        FROM mints m
        LEFT JOIN markets k ON k.market_id = m.market_id
+       -- Predict v4: the queue's order fee, charged on top of the mint.
+       LEFT JOIN queue_fills qf ON qf.market_id = m.market_id AND qf.order_id = m.order_id AND qf.kind IN (0, 1, 2)
        LEFT JOIN (
-         SELECT market_id, root_id, SUM(proceeds) AS proceeds, SUM(quantity_closed) AS qty,
-                SUM(trading_fee + builder_fee + penalty_fee) AS fees, COUNT(*) AS n,
+         SELECT market_id, root_id, SUM(proceeds - order_fee) AS proceeds, SUM(quantity_closed) AS qty,
+                SUM(trading_fee + builder_fee + penalty_fee + order_fee) AS fees, COUNT(*) AS n,
                 MAX(ts_ms) AS last,
                 (SELECT e2.digest FROM exits e2 WHERE e2.market_id = e.market_id AND e2.root_id = e.root_id
                  ORDER BY e2.ts_ms DESC LIMIT 1) AS digest
-         FROM exits e GROUP BY market_id, root_id
+         FROM (SELECT ex.*, ${SELL_ORDER_FEE} AS order_fee FROM exits ex) e GROUP BY market_id, root_id
        ) x ON x.market_id = m.market_id AND x.root_id = m.root_id
        LEFT JOIN (
          SELECT market_id, root_id, SUM(payout) AS payout, MAX(digest) AS digest
-         FROM claims GROUP BY market_id, root_id
+         FROM all_claims GROUP BY market_id, root_id
        ) c ON c.market_id = m.market_id AND c.root_id = m.root_id
        WHERE m.root_id = m.order_id
        ORDER BY m.ts_ms ASC`,
@@ -160,7 +172,7 @@ export function loadPositions(db: Db, nowMs: number): Position[] {
       entryProb: r.entry_prob / FP,
       quantity,
       cost,
-      mintFees: (r.trading_fee - r.subsidy + r.builder_fee + r.penalty_fee) / USDC,
+      mintFees: (r.trading_fee - r.subsidy + r.builder_fee + r.penalty_fee + r.order_fee) / USDC,
       exitProceeds,
       exitQuantity,
       exitFees: (r.x_fees ?? 0) / USDC,
@@ -191,6 +203,8 @@ export interface Funding {
   appFees: number;
   /** Latest on-chain USDC balance of the account. */
   balance: number | null;
+  /** Has traded through Predict v4's queue, which holds funds outside the balance between fill and payout. */
+  queued: boolean;
 }
 
 /**
@@ -200,11 +214,22 @@ export interface Funding {
  * whatever is left over is external money — or, when the transaction also
  * trades, a fee charged by the app that built it.
  */
+/** The first checkpoint of Predict v4's queued orders (Infinity before any). */
+function queueCutover(db: Db): number {
+  const r = db.prepare(`SELECT MIN(checkpoint) cp FROM enqueues`).get() as { cp: number | null };
+  return r.cp ?? Number.MAX_SAFE_INTEGER;
+}
+
 export function loadFunding(db: Db): Map<string, Funding> {
   const rows = db
     .prepare(
       `WITH debit AS (
-         SELECT digest, owner, SUM(cost) v FROM mints WHERE root_id = order_id GROUP BY digest, owner
+         SELECT digest, owner, SUM(v) v FROM (
+           SELECT digest, owner, cost v FROM mints WHERE root_id = order_id
+           -- Predict v4: the trader's own transaction only escrows the order.
+           UNION ALL SELECT q.digest, a.owner, q.budget + q.order_fee v
+           FROM enqueues q JOIN accounts a ON a.account_id = q.account_id
+         ) GROUP BY digest, owner
        ), credit AS (
          SELECT digest, owner, SUM(v) v FROM (
            SELECT digest, owner, proceeds v FROM exits UNION ALL SELECT digest, owner, payout v FROM claims
@@ -212,7 +237,8 @@ export function loadFunding(db: Db): Map<string, Funding> {
        ), f AS (
          SELECT fl.digest, a.owner,
                 SUM(CASE WHEN fl.kind = 'deposit' THEN fl.amount ELSE 0 END) dep,
-                SUM(CASE WHEN fl.kind = 'settle' THEN fl.amount ELSE 0 END) settle,
+                -- Since v4, FundsSettled returns queue money (fills, payouts, refunds) to the account.
+                SUM(CASE WHEN fl.kind = 'settle' AND fl.checkpoint < ? THEN fl.amount ELSE 0 END) settle,
                 SUM(CASE WHEN fl.kind = 'withdraw' THEN fl.amount ELSE 0 END) wd
          FROM account_flows fl JOIN accounts a ON a.account_id = fl.account_id
          GROUP BY fl.digest, a.owner
@@ -226,7 +252,7 @@ export function loadFunding(db: Db): Map<string, Funding> {
        LEFT JOIN debit d ON d.digest = f.digest AND d.owner = f.owner
        GROUP BY f.owner`,
     )
-    .all() as Array<{ owner: string; deposited: number; withdrawn: number; app_fees: number }>;
+    .all(queueCutover(db)) as Array<{ owner: string; deposited: number; withdrawn: number; app_fees: number }>;
   const balances = db
     .prepare(
       `SELECT owner, new_balance FROM (
@@ -236,12 +262,23 @@ export function loadFunding(db: Db): Map<string, Funding> {
        ) WHERE rn = 1`,
     )
     .all() as Array<{ owner: string; new_balance: number }>;
+  const queued = new Set(
+    (db.prepare(`SELECT DISTINCT a.owner FROM enqueues q JOIN accounts a ON a.account_id = q.account_id`).all() as Array<{ owner: string }>).map(
+      (r) => r.owner,
+    ),
+  );
   const out = new Map<string, Funding>();
   for (const r of rows) {
-    out.set(r.owner, { deposited: r.deposited / USDC, withdrawn: r.withdrawn / USDC, appFees: r.app_fees / USDC, balance: null });
+    out.set(r.owner, {
+      deposited: r.deposited / USDC,
+      withdrawn: r.withdrawn / USDC,
+      appFees: r.app_fees / USDC,
+      balance: null,
+      queued: queued.has(r.owner),
+    });
   }
   for (const b of balances) {
-    const f = out.get(b.owner) ?? { deposited: 0, withdrawn: 0, appFees: 0, balance: null };
+    const f = out.get(b.owner) ?? { deposited: 0, withdrawn: 0, appFees: 0, balance: null, queued: queued.has(b.owner) };
     f.balance = b.new_balance / USDC;
     out.set(b.owner, f);
   }
@@ -257,7 +294,9 @@ function fundingStats(f: Funding, ps: Position[], pnl: number, openCost: number)
     ...f,
     unclaimed,
     returnOnDeposits: f.deposited > 0 ? (pnl - f.appFees) / f.deposited : null,
-    reconciled: f.balance != null && Math.abs(f.balance - expected) < 0.01,
+    // Queued orders park escrow, leftovers and payouts outside the balance until
+    // the account next settles its funds, so those balances can't be checked this way.
+    reconciled: f.queued ? null : f.balance != null && Math.abs(f.balance - expected) < 0.01,
   };
 }
 
@@ -287,8 +326,8 @@ export interface WalletStats {
         unclaimed: number;
         /** (realized profit − app fees) ÷ deposited. */
         returnOnDeposits: number | null;
-        /** deposited − withdrawn + profit − open cost − app fees − unclaimed = balance, to the cent. */
-        reconciled: boolean;
+        /** deposited − withdrawn + profit − open cost − app fees − unclaimed = balance, to the cent; null = not checkable. */
+        reconciled: boolean | null;
       })
     | null;
 }
@@ -503,8 +542,9 @@ function buildOverview(ps: Position[], wallets: WalletStats[], markets: MarketSt
          (SELECT COALESCE(SUM(trading_fee), 0) FROM exits) AS exit_trading,
          (SELECT COALESCE(SUM(impact_charge), 0) FROM mints) AS impact_charge,
          (SELECT COALESCE(SUM(impact_rebate), 0) FROM exits) AS impact_rebate,
+         (SELECT COALESCE(SUM(order_fee), 0) FROM queue_fills) AS order_fee,
          (SELECT COUNT(*) FROM exits) AS exit_events,
-         (SELECT COUNT(*) FROM claims) AS claim_events`,
+         (SELECT COUNT(*) FROM all_claims) AS claim_events`,
     )
     .get() as Record<string, number>;
 
@@ -568,7 +608,8 @@ function buildOverview(ps: Position[], wallets: WalletStats[], markets: MarketSt
       referral: fees.referral! / USDC,
       impactCharged: fees.impact_charge! / USDC,
       impactRebated: fees.impact_rebate! / USDC,
-      total: (fees.mint_trading! + fees.exit_trading! + fees.builder! + fees.penalty!) / USDC,
+      order: fees.order_fee! / USDC,
+      total: (fees.mint_trading! + fees.exit_trading! + fees.builder! + fees.penalty! + fees.order_fee!) / USDC,
     },
     reconciliation: { claimChecked, claimMatched, exitEvents: fees.exit_events!, claimEvents: fees.claim_events! },
     daily: bucketize(ps, 86400_000),

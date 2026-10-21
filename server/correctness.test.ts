@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mintCost, redeemProceeds, sideOf, POS_INF_TICK } from './indexer.js';
 import { openDb, type Db } from './db.js';
-import { loadPositions, walletStats } from './stats.js';
+import { loadFunding, loadPositions, walletStats } from './stats.js';
 
 const OWNER = '0x' + 'a'.repeat(64);
 const KEY = '0x' + 'b'.repeat(64);
@@ -125,4 +125,58 @@ test('partial early exit plus settlement of the remainder', () => {
   assert.ok(Math.abs(p!.pnl! - (0.59 + 1 - 0.8)) < 1e-9);
   // Exited positions don't count toward held-to-expiry skill.
   assert.equal(walletStats(OWNER, [p!]).held.n, 0);
+});
+
+// ── Predict v4: queued orders ────────────────────────────────────────────────
+
+const ACCOUNT = '0x' + 'c'.repeat(64);
+
+function fill(d: Db, o: { id: string; digest?: string; market: string; kind: number; fee: number; order: string; root: string }) {
+  d.prepare(`INSERT INTO queue_fills VALUES (?, ?, 1, 2000, ?, ?, '0', ?, 0, 0, ?, ?, ?)`).run(
+    o.id, o.digest ?? 'F', ACCOUNT, o.market, o.kind, o.fee, o.order, o.root,
+  );
+}
+
+test('v4: the queue order fee is part of a buy and a sell', () => {
+  const d = db();
+  d.prepare(`INSERT INTO accounts VALUES (?, ?, NULL)`).run(ACCOUNT, OWNER);
+  market(d, M1, 5000, null);
+  mint(d, { id: 'm', market: M1, root: '5', lo: 0n, hi: 100n, qty: 2_000_000, cost: 800_000, prob: 400_000_000 });
+  fill(d, { id: 'f1', market: M1, kind: 0, fee: 20_000, order: '5', root: '5' });
+  // Full close: the sell fill's position is zeroed, so it matches by tx, market and owner.
+  d.prepare(`INSERT INTO exits VALUES ('x', 'S', 1, 3000, ?, ?, '5', 2000000, 0, 1000000, 0, 0, 0, 0, 1000000)`).run(OWNER, M1);
+  fill(d, { id: 'f2', digest: 'S', market: M1, kind: 4, fee: 20_000, order: '0', root: '0' });
+  const [p] = loadPositions(d, 4000);
+  assert.equal(p!.cost, 0.82);
+  assert.equal(p!.exitProceeds, 0.98);
+  assert.ok(Math.abs(p!.pnl! - (0.98 - 0.82)) < 1e-9);
+});
+
+test('v4: keeper payouts land on the position, through a partial sell’s replacement order', () => {
+  const d = db();
+  market(d, M1, 5000, 1n * TICK);
+  mint(d, { id: 'm', market: M1, root: '9', lo: 0n, hi: 100n, qty: 2_000_000, cost: 800_000, prob: 400_000_000 });
+  d.prepare(`INSERT INTO exits VALUES ('x', 'S', 1, 3000, ?, ?, '9', 1000000, 1000000, 600000, 0, 0, 0, 0, 600000)`).run(OWNER, M1);
+  fill(d, { id: 'f', digest: 'S', market: M1, kind: 4, fee: 0, order: '11', root: '9' });
+  d.prepare(`INSERT INTO record_settles VALUES ('s', 'P', 1, 6000, ?, ?, '11', 1000000)`).run(ACCOUNT, M1);
+  const [p] = loadPositions(d, 6000);
+  assert.equal(p!.status, 'won');
+  assert.equal(p!.claimed, 1);
+  assert.equal(p!.claimed, p!.settledValue);
+});
+
+test('v4: an enqueue’s escrow is a trade, not a withdrawal, and queued balances are not checked', () => {
+  const d = db();
+  d.prepare(`INSERT INTO accounts VALUES (?, ?, NULL)`).run(ACCOUNT, OWNER);
+  const flow = d.prepare(`INSERT INTO account_flows VALUES (?, ?, ?, 0, ?, ?, ?, ?)`);
+  flow.run('d', 'DEP', 1, ACCOUNT, 'deposit', 10_000_000, 10_000_000);
+  flow.run('w', 'ENQ', 2, ACCOUNT, 'withdraw', 2_180_000, 7_820_000);
+  d.prepare(`INSERT INTO enqueues VALUES ('q', 'ENQ', 2, 2000, ?, ?, 0, 2160000, 20000)`).run(ACCOUNT, M1);
+  // Leftover escrow coming back through FundsSettled isn't new money.
+  flow.run('s', 'BACK', 3, ACCOUNT, 'settle', 350_000, 8_170_000);
+  const f = loadFunding(d).get(OWNER)!;
+  assert.equal(f.deposited, 10);
+  assert.equal(f.withdrawn, 0);
+  assert.equal(f.queued, true);
+  assert.equal(walletStats(OWNER, [], f).funding!.reconciled, null);
 });

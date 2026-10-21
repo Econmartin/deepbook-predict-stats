@@ -9,10 +9,16 @@
  *   sells   sale value, fees, impact refund, net proceeds
  *   claims  settlement payout
  *
+ * Since Predict v4 a trader's own transaction only queues the order; a keeper
+ * fills it in a separate transaction (OrderMinted / LiveOrderRedeemed plus the
+ * queue's QueuedOrderFilled, which carries the per-order fee) and later pays
+ * the settlement (OpenRecordSettled).
+ *
  * Nothing here is estimated from our snapshot: amounts are the event fields,
  * USDC ÷ 1e6, probabilities and prices ÷ 1e9.
  */
 import { sdk } from './live';
+import { dataUrl } from './lib';
 
 type Json = Record<string, string | null>;
 const USDC = 1e6;
@@ -53,6 +59,8 @@ export interface BuyBreakdown {
   impact: number;
   builder: number;
   referral: number;
+  /** Predict v4's per-order queue fee (0 for a direct trade). */
+  orderFee: number;
   cost: number;
   allInPerContract: number;
   oracleAgeMs: { pyth: number | null; blockScholes: number | null };
@@ -73,6 +81,7 @@ export interface SellBreakdown {
   congestion: number;
   builder: number;
   impactRefund: number;
+  orderFee: number;
   proceeds: number;
   pricePerContract: number;
 }
@@ -95,6 +104,10 @@ export interface TxInspection {
   checkpoint: string;
   success: boolean;
   gasSui: number;
+  /** A keeper filled queued orders here: the signer and gas are the keeper's, not the trader's. */
+  keeper: boolean;
+  /** Orders this transaction placed in the queue (filled in a later transaction). */
+  enqueued: number;
   items: Breakdown[];
 }
 
@@ -164,7 +177,7 @@ async function tradingFeeAt(
   }
 }
 
-async function buy(j: Json, m: MarketInfo): Promise<BuyBreakdown> {
+async function buy(j: Json, m: MarketInfo, orderFee: number): Promise<BuyBreakdown> {
   const lo = big(j.lower_tick);
   const hi = big(j.higher_tick);
   const side = lo === 0n ? 'down' : hi === POS_INF ? 'up' : 'range';
@@ -173,7 +186,7 @@ async function buy(j: Json, m: MarketInfo): Promise<BuyBreakdown> {
   const tradingFee = usd(j.trading_fee);
   const subsidy = usd(j.fee_incentive_subsidy);
   const cost =
-    usd(j.premium) + tradingFee - subsidy + usd(j.builder_fee) + usd(j.penalty_fee) + usd(j.inventory_impact_charge);
+    usd(j.premium) + tradingFee - subsidy + usd(j.builder_fee) + usd(j.penalty_fee) + usd(j.inventory_impact_charge) + orderFee;
 
   // Recompute the fee at the trade's timestamp; if it matches the chain to the
   // base unit, recompute again a day before expiry (no late-entry ramp) to split it.
@@ -232,6 +245,7 @@ async function buy(j: Json, m: MarketInfo): Promise<BuyBreakdown> {
     impact: usd(j.inventory_impact_charge),
     builder: usd(j.builder_fee),
     referral: usd(j.referral_fee),
+    orderFee,
     cost,
     allInPerContract: contracts ? cost / contracts : 0,
     oracleAgeMs: { pyth: age(j.pyth_spot_source_timestamp_ms), blockScholes: bs.length ? atMs - Math.min(...bs) : null },
@@ -239,7 +253,7 @@ async function buy(j: Json, m: MarketInfo): Promise<BuyBreakdown> {
   };
 }
 
-function sell(j: Json, m: MarketInfo): SellBreakdown {
+function sell(j: Json, m: MarketInfo, orderFee: number): SellBreakdown {
   const atMs = Number(j.onchain_timestamp_ms);
   const closed = Number(big(j.quantity_closed)) / USDC;
   const saleValue = usd(j.redeem_amount);
@@ -261,7 +275,8 @@ function sell(j: Json, m: MarketInfo): SellBreakdown {
     congestion,
     builder,
     impactRefund,
-    proceeds: saleValue - tradingFee - builder - congestion + impactRefund,
+    orderFee,
+    proceeds: saleValue - tradingFee - builder - congestion + impactRefund - orderFee,
     pricePerContract: closed ? saleValue / closed : 0,
   };
 }
@@ -281,7 +296,39 @@ export async function inspectTransaction(digest: string): Promise<TxInspection> 
   const t = res.Transaction;
   if (!t) throw new Error('Transaction not found');
   const pkg = s.cfg.packages.predictV1;
-  const events = (t.events ?? []).filter((e) => e.eventType.startsWith(`${pkg}::order_events::`));
+  const pk = s.cfg.packages as { predictOrdersV1?: string; predictOrders?: string };
+  const queuePrefix = `${pk.predictOrdersV1 ?? pk.predictOrders ?? '-'}::queue_events::`;
+  const events = (t.events ?? []).filter(
+    (e) => e.eventType.startsWith(`${pkg}::order_events::`) || e.eventType.startsWith(queuePrefix),
+  );
+  const named = (n: string) => events.filter((e) => e.eventType.endsWith(`::${n}`)).map((e) => e.json ?? {});
+  // The queue's fill events carry each order's fee: a mint's by its new order id,
+  // a sell's (whose position may be closed) by account and market.
+  const fills = named('QueuedOrderFilled') as unknown as Array<Json & { position?: { order_id?: string } }>;
+  const mintFee = new Map<string, number>();
+  const sellFees = new Map<string, number[]>();
+  for (const f of fills) {
+    if (Number(f.kind) === 4) {
+      const k = `${f.account_id}:${f.expiry_market_id}`;
+      sellFees.set(k, [...(sellFees.get(k) ?? []), usd(f.order_fee)]);
+    } else {
+      mintFee.set(`${f.account_id}:${f.position?.order_id}`, usd(f.order_fee));
+    }
+  }
+  // A keeper payout names the account, not its owner; the snapshot's market
+  // file maps the position back to its owner (empty when it isn't there yet).
+  const holders = new Map<string, Promise<Map<string, string>>>();
+  const positionOwner = (marketId: string, rootId: string) => {
+    let p = holders.get(marketId);
+    if (!p) {
+      p = fetch(dataUrl(`market/${marketId}.json`))
+        .then((r) => (r.ok ? r.json() : { positions: [] }))
+        .then((d: { positions?: Array<{ rootId: string; owner: string }> }) => new Map((d.positions ?? []).map((x) => [x.rootId, x.owner])))
+        .catch(() => new Map<string, string>());
+      holders.set(marketId, p);
+    }
+    return p.then((m) => m.get(rootId) ?? '');
+  };
   const markets = new Map<string, Promise<MarketInfo>>();
   const market = (id: string) => {
     let p = markets.get(id);
@@ -291,13 +338,23 @@ export async function inspectTransaction(digest: string): Promise<TxInspection> 
   const items: Breakdown[] = [];
   for (const e of events) {
     const j = e.json ?? {};
+    const name = e.eventType.split('::').pop() ?? '';
+    if (!['OrderMinted', 'LiveOrderRedeemed', 'OpenRecordSettled', 'SettledOrderRedeemed'].includes(name)) continue;
     const m = await market(String(j.expiry_market_id).toLowerCase());
-    const name = e.eventType.split('::').pop();
     if (name === 'OrderMinted') {
       // Partial-close replacements re-emit a mint for the remainder; only originals are buys.
-      if (String(j.position_root_id) === String(j.order_id)) items.push(await buy(j, m));
+      if (String(j.position_root_id) === String(j.order_id)) items.push(await buy(j, m, mintFee.get(`${j.account_id}:${j.order_id}`) ?? 0));
     } else if (name === 'LiveOrderRedeemed') {
-      items.push(sell(j, m));
+      items.push(sell(j, m, sellFees.get(`${j.account_id}:${j.expiry_market_id}`)?.shift() ?? 0));
+    } else if (name === 'OpenRecordSettled') {
+      items.push({
+        kind: 'claim',
+        owner: await positionOwner(String(j.expiry_market_id).toLowerCase(), String(j.order_id)),
+        market: m,
+        rootId: String(j.order_id),
+        atMs: Number(j.onchain_timestamp_ms),
+        payout: usd(j.payout),
+      });
     } else if (name === 'SettledOrderRedeemed') {
       items.push({
         kind: 'claim',
@@ -319,6 +376,8 @@ export async function inspectTransaction(digest: string): Promise<TxInspection> 
     checkpoint: String(t.checkpoint ?? ''),
     success: t.effects?.status?.success !== false,
     gasSui: gas / FP,
+    keeper: fills.length > 0 || named('OpenRecordSettled').length > 0,
+    enqueued: named('OrderEnqueued').length,
     items,
   };
 }

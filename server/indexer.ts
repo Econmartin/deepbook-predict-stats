@@ -6,14 +6,15 @@
  * `digest:eventIndex`, so a crash mid-page just replays that page harmlessly.
  *
  * Correctness rules (see README):
- *   - Attribute by the event's `owner`, never the tx sender (session keys).
+ *   - Attribute by the event's `owner`, never the tx sender (session keys, and
+ *     since Predict v4 the keeper that fills queued orders).
  *   - Net every fee into mint cost / redeem proceeds.
  *   - Record a settlement price ONLY once the market is past expiry AND the
  *     chain has written `settlement_price`. Never infer a result earlier.
  */
 
 import { normalizeSuiAddress } from '@mysten/sui/utils';
-import { eventPage, readMarket, sdkConfig, type ChainEvent, type EventName } from './chain.js';
+import { eventPage, isPruned, ordersPackage, readMarket, sdkConfig, type ChainEvent, type EventName } from './chain.js';
 import { getMeta, setMeta, tx, type Db } from './db.js';
 
 export const POS_INF_TICK = (1n << 30n) - 1n;
@@ -68,7 +69,8 @@ function insertMints(db: Db, events: ChainEvent[]): number {
         e.checkpoint,
         Number(j.onchain_timestamp_ms),
         addr(j.owner),
-        addr(e.sender),
+        // A keeper fill's sender is the keeper, not a key the trader signed with.
+        e.module === 'queue' ? addr(j.owner) : addr(e.sender),
         addr(j.expiry_market_id),
         String(j.order_id),
         String(j.position_root_id ?? j.order_id),
@@ -178,6 +180,80 @@ function flowInserter(kind: 'deposit' | 'withdraw' | 'settle') {
   };
 }
 
+function insertEnqueues(db: Db, events: ChainEvent[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO enqueues (event_id, digest, checkpoint, ts_ms, account_id,
+      market_id, kind, budget, order_fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let n = 0;
+  for (const e of events) {
+    const j = e.json;
+    n += Number(
+      stmt.run(
+        eventId(e),
+        e.digest,
+        e.checkpoint,
+        Number(j.onchain_timestamp_ms),
+        addr(j.account_id),
+        addr(j.expiry_market_id),
+        Number(j.kind),
+        Number(big(j.budget)),
+        Number(big(j.order_fee)),
+      ).changes,
+    );
+  }
+  return n;
+}
+
+function insertFills(db: Db, events: ChainEvent[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO queue_fills (event_id, digest, checkpoint, ts_ms, account_id,
+      market_id, record_id, kind, quantity, amount, order_fee, order_id, root_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let n = 0;
+  for (const e of events) {
+    const j = e.json;
+    const pos = (j.position ?? {}) as unknown as { order_id?: string; root_id?: string };
+    n += Number(
+      stmt.run(
+        eventId(e),
+        e.digest,
+        e.checkpoint,
+        Number(j.onchain_timestamp_ms),
+        addr(j.account_id),
+        addr(j.expiry_market_id),
+        String(j.record_id),
+        Number(j.kind),
+        Number(big(j.quantity)),
+        Number(big(j.amount)),
+        Number(big(j.order_fee)),
+        String(pos.order_id ?? '0'),
+        String(pos.root_id ?? '0'),
+      ).changes,
+    );
+  }
+  return n;
+}
+
+function insertRecordSettles(db: Db, events: ChainEvent[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO record_settles (event_id, digest, checkpoint, ts_ms, account_id,
+      market_id, order_id, payout) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  let n = 0;
+  for (const e of events) {
+    const j = e.json;
+    n += Number(
+      stmt.run(
+        eventId(e),
+        e.digest,
+        e.checkpoint,
+        Number(j.onchain_timestamp_ms),
+        addr(j.account_id),
+        addr(j.expiry_market_id),
+        String(j.order_id),
+        Number(big(j.payout)),
+      ).changes,
+    );
+  }
+  return n;
+}
+
 const INSERTERS: Record<EventName, (db: Db, e: ChainEvent[]) => number> = {
   OrderMinted: insertMints,
   LiveOrderRedeemed: insertExits,
@@ -186,6 +262,9 @@ const INSERTERS: Record<EventName, (db: Db, e: ChainEvent[]) => number> = {
   Deposited: flowInserter('deposit'),
   Withdrawn: flowInserter('withdraw'),
   FundsSettled: flowInserter('settle'),
+  OrderEnqueued: insertEnqueues,
+  QueuedOrderFilled: insertFills,
+  OpenRecordSettled: insertRecordSettles,
 };
 
 async function syncStream(db: Db, name: EventName, maxPages: number): Promise<number> {
@@ -193,7 +272,18 @@ async function syncStream(db: Db, name: EventName, maxPages: number): Promise<nu
   let cursor = getMeta(db, key);
   let added = 0;
   for (let page = 0; page < maxPages; page++) {
-    const r = await eventPage(name, cursor);
+    let r: Awaited<ReturnType<typeof eventPage>>;
+    try {
+      r = await eventPage(name, cursor);
+    } catch (e) {
+      if (!isPruned(e) || cursor == null) throw e;
+      // The node no longer serves events this old. Restart from the oldest it
+      // has (re-inserts are no-ops) and record that anything between is missing.
+      console.warn(`${name}: cursor below the node's retained history; resuming from the oldest available event`);
+      setMeta(db, `gap:${name}`, `${cursor} @ ${new Date().toISOString()}`);
+      cursor = null;
+      r = await eventPage(name, cursor);
+    }
     tx(db, () => {
       added += INSERTERS[name](db, r.events);
       const last = r.events.at(-1);
@@ -291,7 +381,13 @@ export function syncOnce(db: Db, maxPages = 1000): Promise<SyncResult> {
     // Mints before exits/claims only matters for display; rows join at read time.
     const mints = await syncStream(db, 'OrderMinted', maxPages);
     const exits = await syncStream(db, 'LiveOrderRedeemed', maxPages);
-    const claims = await syncStream(db, 'SettledOrderRedeemed', maxPages);
+    let claims = await syncStream(db, 'SettledOrderRedeemed', maxPages);
+    // Predict v4 queue: order fees, payouts and the trader-side escrow debits.
+    if (ordersPackage()) {
+      await syncStream(db, 'QueuedOrderFilled', maxPages);
+      claims += await syncStream(db, 'OpenRecordSettled', maxPages);
+      await syncStream(db, 'OrderEnqueued', maxPages);
+    }
     // Account streams: owners first, so every flow can be attributed.
     await syncStream(db, 'AccountCreated', maxPages);
     const flows =

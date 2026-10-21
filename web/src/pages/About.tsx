@@ -34,7 +34,9 @@ export default function About() {
             </a>
           </li>
           <li>
-            Events: <code>OrderMinted</code>, <code>LiveOrderRedeemed</code>, <code>SettledOrderRedeemed</code>
+            Events: <code>OrderMinted</code>, <code>LiveOrderRedeemed</code>, <code>SettledOrderRedeemed</code>, plus the
+            order queue’s <code>QueuedOrderFilled</code> (order fee) and <code>OpenRecordSettled</code> (payouts) since
+            Predict v4
           </li>
           <li>
             Endpoint: <code>{data.grpc}</code>
@@ -87,7 +89,8 @@ export default function About() {
       <h2>Check it yourself</h2>
       <p>
         Every wallet, market and trade links to {ex.name} (switch explorers in the footer). The overview reconciles our
-        computed settlement payouts against every on-chain <code>SettledOrderRedeemed</code> claim. The indexer is open
+        computed settlement payouts against every on-chain payout (<code>SettledOrderRedeemed</code>, and since Predict v4 the
+        keeper’s <code>OpenRecordSettled</code>). The indexer is open
         source — run it and you’ll get the same database.
       </p>
       <p className="faint" style={{ fontSize: 14, marginTop: 40 }}>

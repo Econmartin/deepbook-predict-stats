@@ -119,6 +119,16 @@ Environment variables (all optional):
   - `LiveOrderRedeemed`: a full or partial sale before expiry.
   - `SettledOrderRedeemed`: a payout is claimed after settlement. This is used
     for reconciliation only.
+- **Queued orders (Predict v4, from Oct 20 2026).** Traders now enqueue orders
+  and a keeper fills them in its own transaction, so the mint and sale events
+  above come from keeper transactions (attribution is by `owner`, as always).
+  The indexer also pages the order-flow package's `queue_events`:
+  - `OrderEnqueued`: the trader's own transaction, which escrows the budget
+    plus a flat order fee from their account.
+  - `QueuedOrderFilled`: carries the order fee, which is added to the buy's
+    cost or taken from the sale's proceeds.
+  - `OpenRecordSettled`: the keeper pays each held position its settlement
+    payout (zero for a loss). This replaces `SettledOrderRedeemed`.
 - **Market objects** (`ExpiryMarket`) supply the expiry, the tick size and
   `strike_exposure.settlement_price`.
 
@@ -166,6 +176,12 @@ transaction is counted as a fee charged by the trading app. `FundsSettled`
 credits (money arriving from outside trading, e.g. LP withdrawals) count as
 deposits.
 
+Since Predict v4, a buy's `Withdrawn` is the escrow in the trader's
+`OrderEnqueued` transaction, and fills, leftovers, sale proceeds and payouts
+come back through `FundsSettled`, which from then on is trade money, not a
+deposit. The queue holds that money outside the account balance until it
+settles back, so wallets that traded through the queue aren't balance-checked.
+
 Every wallet is checked against its on-chain balance:
 `deposited − withdrawn + realized profit − open cost − app fees − unclaimed
 winnings = balance`. It reconciles to the cent for 945 of 946 wallets. The one
@@ -175,7 +191,12 @@ exception moves money outside Predict trading.
 
 - **Payouts match the chain.** `npm run verify` compares the payout we compute
   from each market's settlement price with every on-chain
-  `SettledOrderRedeemed.payout_amount`. The overview page shows the same check.
+  `SettledOrderRedeemed.payout_amount` and `OpenRecordSettled.payout`. The
+  overview page shows the same check.
+- **Pruned history.** The public fullnode only serves recent events. If a saved
+  cursor falls out of that window, the indexer restarts the stream from the
+  oldest event still served and records the skipped range in `meta`
+  (`gap:<stream>`).
 - **"As of" is shown everywhere.** Each page shows the last indexed checkpoint,
   which links to the explorer, and the time of the last sync.
 - **Everything links out.** Wallets, market objects and mint/sell transactions

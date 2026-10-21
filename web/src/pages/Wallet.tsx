@@ -187,7 +187,9 @@ export default function Wallet({ address }: { address: string }) {
                     <div className="card-sub" style={{ marginTop: 10, fontSize: 12 }}>
                       {s.funding.reconciled
                         ? '✓ Deposits − withdrawals + profit − open trades − unclaimed = the on-chain balance, to the cent.'
-                        : 'This account also moves money outside Predict trading, so its balance doesn’t reconcile from trades alone.'}
+                        : s.funding.reconciled == null
+                          ? 'Queued orders hold escrow and payouts outside the account balance until they settle back, so this balance isn’t checked against trades.'
+                          : 'This account also moves money outside Predict trading, so its balance doesn’t reconcile from trades alone.'}
                     </div>
                   </>
                 )}
